@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NoConsent — Privacy Policy</title>
+  <style>
+    :root {
+      --bg: #0a0c0f; --surface: #111418; --border: #1e2530;
+      --accent: #ff3b5c; --text: #e8edf5; --dim: #8a95a8; --faint: #3d4655;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
+           font-size: 15px; line-height: 1.7; max-width: 760px; margin: 0 auto; padding: 40px 24px; }
+    h1 { font-size: 2rem; color: var(--accent); margin-bottom: 6px; }
+    .subtitle { color: var(--dim); margin-bottom: 40px; font-size: 0.9rem; }
+    h2 { font-size: 1.1rem; color: var(--text); margin: 32px 0 10px;
+         padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    p  { color: var(--dim); margin-bottom: 14px; }
+    ul { color: var(--dim); margin: 0 0 14px 20px; }
+    li { margin-bottom: 6px; }
+    .highlight {
+      background: var(--surface); border-left: 3px solid var(--accent);
+      padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0;
+    }
+    .highlight p { color: var(--text); margin: 0; font-weight: 600; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+             color: var(--faint); font-size: 0.85rem; }
+    .badge {
+      display: inline-block; background: rgba(255,59,92,0.1); color: var(--accent);
+      border: 1px solid rgba(255,59,92,0.3); border-radius: 4px;
+      padding: 2px 10px; font-size: 0.8rem; margin-left: 8px; vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🚫 NoConsent</h1>
+  <p class="subtitle">Privacy Policy · Last updated: February 2026</p>
+
+  <div class="highlight">
+    <p>TL;DR — NoConsent does not collect, store, or transmit any personal data whatsoever. It runs entirely in your browser.</p>
+  </div>
+
+  <h2>1. What NoConsent Does</h2>
+  <p>NoConsent is a Chrome browser extension that automatically denies non-essential cookie consents and closes consent banners on websites you visit. It operates entirely within your browser and does not communicate with any external server.</p>
+
+  <h2>2. Data We Do NOT Collect</h2>
+  <ul>
+    <li>We do not collect your browsing history or the URLs of sites you visit</li>
+    <li>We do not collect personal identifiers (name, email, IP address, device ID)</li>
+    <li>We do not use cookies, pixels, or any tracking technology</li>
+    <li>We do not store any information about which websites you use the extension on</li>
+    <li>We do not sell, share, or trade any data with third parties</li>
+  </ul>
+
+  <h2>3. Optional Anonymous Telemetry <span class="badge">Opt-in only</span></h2>
+  <p>NoConsent includes an <strong>entirely optional</strong> telemetry feature that you must explicitly opt in to. If you choose to enable it, the extension sends a single anonymous ping when a denial is performed, containing <em>only</em>:</p>
+  <ul>
+    <li>A randomly generated session ID (not tied to you or your device, regenerated each session)</li>
+    <li>The type of CMP detected (e.g. "OneTrust", "Cookiebot") — no domain or URL</li>
+    <li>The count of consents denied (e.g. "847")</li>
+    <li>The extension version number</li>
+  </ul>
+  <p>This data contains <strong>no personally identifiable information</strong>. It is used solely to improve the extension by understanding which CMPs are most common. You can disable this at any time in the extension settings. Telemetry is <strong>off by default</strong>.</p>
+  <p>If telemetry is enabled, anonymous pings are sent to a Cloudflare Worker endpoint and stored in an aggregate-only database. No individual records are retained beyond 24 hours.</p>
+
+  <h2>4. Permissions Explained</h2>
+  <p>NoConsent requests the following Chrome permissions:</p>
+  <ul>
+    <li><strong>activeTab</strong> — to read and modify the currently active tab when you click the button</li>
+    <li><strong>scripting</strong> — to inject the consent-denial script into the active page</li>
+    <li><strong>storage</strong> — to save your preferences (telemetry opt-in, donation reminder) locally in your browser</li>
+    <li><strong>tabs</strong> — to detect the current page URL for display in the popup only</li>
+    <li><strong>&lt;all_urls&gt;</strong> — required because cookie banners appear on all websites; without this permission the extension cannot function on most sites</li>
+  </ul>
+  <p>All permissions are used solely for the extension's core function. No data obtained via these permissions leaves your device.</p>
+
+  <h2>5. Local Storage Only</h2>
+  <p>Your opt-in/opt-out preferences are stored using Chrome's <code>storage.local</code> API, which keeps data on your device only. This data is never transmitted anywhere.</p>
+
+  <h2>6. Children's Privacy</h2>
+  <p>NoConsent does not knowingly collect data from anyone, including children under 13. The extension has no age-gated features.</p>
+
+  <h2>7. Changes to This Policy</h2>
+  <p>If we ever change this privacy policy in a material way, we will update the "Last updated" date above and note the changes in the Chrome Web Store listing. Your continued use of the extension constitutes acceptance of any updated policy.</p>
+
+  <h2>8. Contact</h2>
+  <p>Questions about this privacy policy? Open an issue at <a href="https://github.com/your-username/noconsent">github.com/your-username/noconsent</a> or email <a href="mailto:privacy@noconsent.io">privacy@noconsent.io</a>.</p>
+
+  <footer>
+    <p>NoConsent v1.0 · Open source · Built for people, not platforms · <a href="https://noconsent.io">noconsent.io</a></p>
+  </footer>
+
+</body>
+</html>
