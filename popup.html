@@ -92,6 +92,18 @@
       border: 1px solid rgba(255,59,92,0.2); border-radius: 3px;
       padding: 1px 5px; margin-top: 3px; letter-spacing: 0.05em; text-transform: uppercase;
     }
+    .auto-mode-badge {
+      display: none; font-size: 9px; font-family: var(--mono);
+      background: rgba(0,232,122,0.15); color: var(--success);
+      border: 1px solid rgba(0,232,122,0.3); border-radius: 3px;
+      padding: 2px 6px; margin-top: 3px; letter-spacing: 0.05em;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .auto-mode-badge.active { display: inline-block; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
 
     /* ── Status ── */
     .action-area { padding: 14px 16px 16px; }
@@ -277,6 +289,69 @@
     .donation-text { font-size:11px;color:var(--text-dim);flex:1; }
     .donation-btn { background:none;border:1px solid rgba(255,59,92,0.3);color:var(--accent);border-radius:5px;padding:4px 10px;font-size:10px;font-family:var(--mono);font-weight:700;cursor:pointer;letter-spacing:0.05em;white-space:nowrap;text-decoration:none;display:inline-block;transition:all 0.2s; }
     .donation-btn:hover { background:rgba(255,59,92,0.1);border-color:var(--accent); }
+
+    /* Contextual donation prompt */
+    .donation-prompt { background:linear-gradient(135deg,rgba(255,184,0,0.08),rgba(255,184,0,0.03));border-top:1px solid rgba(255,184,0,0.2);padding:12px 16px;position:relative; }
+    .donation-prompt-content { display:flex;align-items:center;gap:12px; }
+    .donation-prompt-icon { font-size:24px;flex-shrink:0; }
+    .donation-prompt-text { flex:1; }
+    .donation-prompt-title { font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px; }
+    .donation-prompt-sub { font-size:10px;color:var(--text-dim); }
+    .donation-prompt-actions { display:flex;gap:6px;flex-shrink:0; }
+    .donation-quick-btn { background:rgba(255,184,0,0.15);border:1px solid rgba(255,184,0,0.3);color:var(--warn);border-radius:4px;padding:6px 12px;font-size:10px;font-family:var(--mono);font-weight:700;cursor:pointer;letter-spacing:0.05em;white-space:nowrap;text-decoration:none;display:inline-block;transition:all 0.2s; }
+    .donation-quick-btn:hover { background:rgba(255,184,0,0.25);border-color:var(--warn);transform:translateY(-1px); }
+    .donation-prompt-dismiss { position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text-faint);font-size:18px;cursor:pointer;padding:0;width:20px;height:20px;line-height:20px;text-align:center;transition:color 0.2s; }
+    .donation-prompt-dismiss:hover { color:var(--text); }
+
+    /* History */
+    .history-header { display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border); }
+    .history-stats { font-size:11px;color:var(--text-dim);font-family:var(--mono); }
+    .clear-history-btn { background:none;border:1px solid var(--border2);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:9px;cursor:pointer;transition:all 0.2s; }
+    .clear-history-btn:hover { border-color:var(--accent);color:var(--accent); }
+    .history-list { max-height:280px;overflow-y:auto; }
+    .history-item { padding:10px 12px;border-bottom:1px solid var(--border);transition:background 0.2s; }
+    .history-item:hover { background:rgba(255,59,92,0.03); }
+    .history-item-header { display:flex;justify-content:space-between;align-items:start;margin-bottom:4px; }
+    .history-item-domain { font-size:11px;font-family:var(--mono);color:var(--text);font-weight:500;display:flex;align-items:center;gap:6px; }
+    .history-item-date { font-size:9px;color:var(--text-faint);font-family:var(--mono); }
+    .history-item-stats { display:flex;gap:12px;font-size:10px;color:var(--text-dim);flex-wrap:wrap; }
+    .history-item-stat { display:flex;align-items:center;gap:4px; }
+    .history-item-stat-icon { font-size:10px; }
+    .history-item-stat-icon.success { color:var(--success); }
+    .history-item-stat-icon.warn { color:var(--warn); }
+    .tab-history { border-left:1px solid var(--border2); }
+    
+    /* Consent-or-pay badge */
+    .consent-or-pay-badge {
+      display:inline-block;background:var(--warn-dim);border:1px solid var(--warn);
+      color:var(--warn);font-size:8px;padding:2px 5px;border-radius:3px;
+      text-transform:uppercase;font-weight:700;letter-spacing:0.5px;
+    }
+    
+    /* Action log */
+    .history-item-expand { margin-top:6px; }
+    .expand-log-btn {
+      background:var(--surface);border:1px solid var(--border2);color:var(--text-dim);
+      border-radius:4px;padding:3px 8px;font-size:9px;cursor:pointer;
+      transition:all 0.2s;display:flex;align-items:center;gap:4px;font-family:var(--mono);
+    }
+    .expand-log-btn:hover { border-color:var(--info);color:var(--info); }
+    .expand-icon { font-size:8px;transition:transform 0.2s; }
+    .history-action-log {
+      margin-top:8px;padding:8px;background:var(--surface);
+      border:1px solid var(--border2);border-radius:4px;
+    }
+    .action-log-title {
+      font-size:9px;font-weight:700;color:var(--text-dim);margin-bottom:4px;
+      text-transform:uppercase;letter-spacing:0.5px;font-family:var(--mono);
+    }
+    .action-log-entry {
+      display:flex;gap:8px;padding:3px 0;font-size:9px;font-family:var(--mono);
+      border-bottom:1px solid var(--border);line-height:1.4;
+    }
+    .action-log-entry:last-child { border-bottom:none; }
+    .action-log-time { color:var(--text-faint);min-width:50px;flex-shrink:0; }
+    .action-log-action { color:var(--text-dim);word-break:break-word; }
     .dismiss-btn { background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:14px;padding:0;line-height:1; }
     .dismiss-btn:hover { color:var(--text-dim); }
     /* Footer */
@@ -301,6 +376,7 @@
     <div class="site-info">
       <div class="site-domain" id="siteDomain">—</div>
       <div id="cmpBadgeWrap"></div>
+      <div class="auto-mode-badge" id="autoModeBadge">⚡ AUTO-ACTIVE</div>
     </div>
   </div>
 
@@ -348,6 +424,7 @@
       <button class="tab-btn active" data-tab="removed" id="tabRemoved">🚫 Denied</button>
       <button class="tab-btn tab-kept" data-tab="kept" id="tabKept">🔒 Kept</button>
       <button class="tab-btn tab-err" data-tab="errors" id="tabErrors">⚠ Errors</button>
+      <button class="tab-btn tab-history" data-tab="history" id="tabHistory">📊 History</button>
     </div>
 
     <div class="tab-panel active" id="panelRemoved">
@@ -359,13 +436,38 @@
     <div class="tab-panel" id="panelErrors">
       <div class="result-empty">No errors.</div>
     </div>
+    <div class="tab-panel" id="panelHistory">
+      <div class="history-header">
+        <div class="history-stats" id="historyStats"></div>
+        <button class="clear-history-btn" id="clearHistoryBtn">Clear All</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="result-empty">No history yet. Start denying consents!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contextual donation prompt (appears after successful denials) -->
+  <div class="donation-prompt" id="donationPrompt" style="display:none">
+    <div class="donation-prompt-content">
+      <div class="donation-prompt-icon">☕</div>
+      <div class="donation-prompt-text">
+        <div class="donation-prompt-title" id="donationPromptTitle">Enjoying DenyStealthCookies?</div>
+        <div class="donation-prompt-sub">Free & open source • No ads • Your privacy protected</div>
+      </div>
+      <div class="donation-prompt-actions">
+        <a class="donation-quick-btn" href="https://paypal.me/getkrisboy" target="_blank" title="Quick donate via PayPal">$ PayPal</a>
+        <a class="donation-quick-btn" href="https://ko-fi.com/krshx" target="_blank" title="Buy me a coffee">☕ Ko-fi</a>
+      </div>
+    </div>
+    <button class="donation-prompt-dismiss" id="dismissDonationPrompt" title="Remind me in 14 days">×</button>
   </div>
 
   <div class="footer">
     <div class="footer-time" id="footerTime"></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button class="settings-toggle" id="settingsToggle" title="Settings">&#9881;</button>
-      <div class="footer-note">DenyStealthCookies v1.1</div>
+      <div class="footer-note">DenyStealthCookies v1.3</div>
     </div>
   </div>
 
@@ -374,7 +476,7 @@
     <div class="donation-text">&#10084; Free &amp; open source</div>
     <a class="donation-btn" href="https://paypal.me/getkrisboy" target="_blank">&#36; PayPal</a>
     <a class="donation-btn" href="https://ko-fi.com/krshx" target="_blank">&#9749; Ko-fi</a>
-    <button class="dismiss-btn" id="dismissDonation">&#215;</button>
+    <button class="dismiss-btn" id="dismissDonation" title="Remind me in 14 days">&#215;</button>
   </div>
 
   <!-- Settings drawer -->
@@ -393,7 +495,7 @@
       <div class="setting-row">
         <div>
           <div class="setting-label">Auto-deny mode</div>
-          <div class="setting-sub">Silently deny banners as pages load (zero clicks needed)</div>
+          <div class="setting-sub">Automatically denies banners as they appear (zero clicks needed, shows ✓ badge on success)</div>
         </div>
         <label class="toggle-switch">
           <input type="checkbox" id="autoModeToggle">

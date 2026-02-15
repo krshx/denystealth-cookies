@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "DenyStealthCookies — Deny All Cookie Tracking",
   "short_name": "DenyStealthCookies",
-  "version": "1.1.0",
-  "description": "One-click denial of all non-essential cookies and tracking consents. Keeps only mandatory cookies. Works on TCF, OneTrust, Cookiebot, Didomi & more.",
+  "version": "1.3.0",
+  "description": "One-click denial of all non-essential cookies and tracking consents. Handles complex multi-level CMPs with tab navigation, iframe scanning. Works on TCF, OneTrust, Cookiebot, Didomi, Quantcast & more. Privacy-first.",
   "permissions": [
     "activeTab",
     "scripting",

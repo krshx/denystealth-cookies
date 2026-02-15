@@ -10,6 +10,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ...message.data
       }
     });
+    
+    // If this was an auto-deny, update badge
+    chrome.storage.local.get('autoMode', (data) => {
+      if (data.autoMode && message.data.unchecked?.length > 0) {
+        setBadge(sender.tab?.id, message.data.unchecked.length);
+      }
+    });
+  }
+
+  if (message.type === 'AUTO_DENY_SUCCESS') {
+    // Update badge when auto-deny completes
+    if (sender.tab?.id) {
+      setBadge(sender.tab.id, '✓');
+    }
   }
 
   if (message.type === 'GET_RESULTS') {
@@ -31,5 +45,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     return true;
+  }
+});
+
+// Badge management
+function setBadge(tabId, text) {
+  if (!tabId) return;
+  
+  const badgeText = typeof text === 'number' ? text.toString() : text;
+  
+  chrome.action.setBadgeText({ 
+    text: badgeText,
+    tabId: tabId 
+  });
+  
+  chrome.action.setBadgeBackgroundColor({ 
+    color: '#00e87a',  // Success green
+    tabId: tabId 
+  });
+  
+  // Clear badge after 5 seconds
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: '', tabId: tabId });
+  }, 5000);
+}
+
+// Clear badge when tab is updated/navigated
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading') {
+    chrome.action.setBadgeText({ text: '', tabId: tabId });
   }
 });

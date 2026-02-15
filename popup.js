@@ -18,10 +18,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   const panelKept     = document.getElementById('panelKept');
   const panelErrors   = document.getElementById('panelErrors');
   const footerTime    = document.getElementById('footerTime');
+  const autoModeBadge = document.getElementById('autoModeBadge');
+  const donationPrompt = document.getElementById('donationPrompt');
+  const historyList   = document.getElementById('historyList');
+  const historyStats  = document.getElementById('historyStats');
 
   // ── Init ──────────────────────────────────────────────────────────────────
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+  // Check if auto-mode is enabled and show indicator
+  chrome.storage.local.get('autoMode', (data) => {
+    if (data.autoMode && autoModeBadge) {
+      autoModeBadge.classList.add('active');
+    }
+  });
+
+  // Load and display history on init
+  loadHistory();  
+  // Wire up clear history button
+  document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory);
   if (tab?.url) {
     try {
       siteDomain.textContent = new URL(tab.url).hostname.replace(/^www\./, '');
@@ -54,6 +69,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('panel' + cap(btn.dataset.tab)).classList.add('active');
+      
+      // Reload history when switching to history tab
+      if (btn.dataset.tab === 'history') {
+        loadHistory();
+      }
     });
   });
 
@@ -110,11 +130,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const kept    = result.mandatory?.length || 0;
     const errs    = result.errors?.length || 0;
     const method  = result.cmpMethod ? ` via ${result.cmpMethod}` : '';
-    const found   = result.bannerFound ? ' · banner found' : ' · no banner detected';
+    const runtime = result.runtime ? ` (${(result.runtime/1000).toFixed(1)}s)` : '';
+    const sections = result.sectionsProcessed?.length || 0;
+    const iframes = result.iframesScanned || 0;
+
+    let detailParts = [`${kept} essential kept`, `banner ${result.bannerClosed ? '✓ closed' : 'not closed'}`];
+    if(sections > 0) detailParts.push(`${sections} sections`);
+    if(iframes > 0) detailParts.push(`${iframes} iframes`);
+    detailParts.push(method);
+    detailParts.push(runtime);
 
     setStatus('done',
       `${removed} consent${removed !== 1 ? 's' : ''} denied`,
-      `${kept} essential kept · banner ${result.bannerClosed ? '✓ closed' : 'not closed'}${method}`
+      detailParts.filter(Boolean).join(' · ')
     );
 
     // Banner closed pill
@@ -130,8 +158,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     incrementRunCount().then(count => {
       if (count >= 3) {
         const bar = document.getElementById('donationBar');
-        chrome.storage.local.get('donationDismissed', d => {
-          if (bar && !d.donationDismissed) bar.style.display = 'flex';
+        chrome.storage.local.get('donationSnoozedUntil', d => {
+          const snoozedUntil = d.donationSnoozedUntil || 0;
+          if (bar && Date.now() >= snoozedUntil) bar.style.display = 'flex';
         });
       }
     });
@@ -140,6 +169,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update CMP badges from result
     if (result.cmpDetected) renderCmpBadges(parseCmps(result.cmpDetected));
+    
+    // Save to history
+    saveToHistory(result);
+    
+    // Show donation prompt contextually
+    showDonationPrompt(removed);
   }
 
   function setError(msg) {
@@ -186,11 +221,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const icon = type === 'removed' ? '🚫' : '🔒';
     const catClass = getCatClass(item.category, item.type);
     const catLabel = item.type ? `${item.category} · ${item.type}` : item.category;
+    const section = item.section && item.section !== 'Main' ? ` [${item.section}]` : '';
     return `
       <div class="result-item">
         <span class="item-icon">${icon}</span>
         <div class="item-body">
-          <div class="item-label">${esc(item.label || 'Unknown')}</div>
+          <div class="item-label">${esc(item.label || 'Unknown')}${section}</div>
           <span class="item-cat ${catClass}">${esc(catLabel || '')}</span>
         </div>
       </div>`;
@@ -219,10 +255,231 @@ document.addEventListener('DOMContentLoaded', async () => {
   function esc(s) {
     return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+
+// ── History Management ─────────────────────────────────────────────────────
+
+const HISTORY_EXPIRY_DAYS = 30;
+
+async function saveToHistory(result) {
+  if (!result || result.unchecked?.length === 0) return; // Don't save empty results
+  
+  const url = result.url || window.location.href;
+  const domain = extractDomain(url);
+  
+  // Get existing history
+  const data = await chrome.storage.local.get('denyHistory');
+  let history = data.denyHistory || [];
+  
+  // Dedupe: Check if we just saved this URL in last 5 seconds
+  const recent = history[0];
+  if (recent && recent.url === url && Date.now() - recent.timestamp < 5000) {
+    return; // Skip duplicate entry
+  }
+  
+  const historyItem = {
+    id: Date.now(),
+    domain,
+    url,
+    timestamp: Date.now(),
+    denied: result.unchecked?.length || 0,
+    kept: result.mandatory?.length || 0,
+    cmp: result.cmpDetected || 'Unknown',
+    method: result.cmpMethod || 'manual',
+    runtime: result.runtime || 0,
+    bannerClosed: result.bannerClosed || false,
+    actionLog: result.actionLog || [],  // Detailed action log
+    consentOrPay: result.consentOrPay || false  // Consent-or-pay detection
+  };
+  
+  // Remove expired entries (older than 30 days)
+  const expiryTime = Date.now() - (HISTORY_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  history = history.filter(item => item.timestamp > expiryTime);
+  
+  // Add new item to beginning
+  history.unshift(historyItem);
+  
+  // No item limit - let it grow naturally, only expire by date
+  
+  // Save back
+  await chrome.storage.local.set({ denyHistory: history });
+}
+
+async function loadHistory() {
+  const data = await chrome.storage.local.get('denyHistory');
+  let history = data.denyHistory || [];
+  
+  // Remove expired entries
+  const expiryTime = Date.now() - (HISTORY_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  history = history.filter(item => item.timestamp > expiryTime);
+  
+  if (history.length === 0) {
+    historyList.innerHTML = '<div class="result-empty">No history yet. Start denying consents!</div>';
+    historyStats.textContent = 'No denials recorded';
+    return;
+  }
+  
+  // Calculate stats
+  const totalDenied = history.reduce((sum, item) => sum + item.denied, 0);
+  const uniqueSites = new Set(history.map(item => item.domain)).size;
+  
+  historyStats.textContent = `${totalDenied.toLocaleString()} total denied · ${uniqueSites} sites · ${history.length} sessions`;
+  
+  // Render history items
+  historyList.innerHTML = history.map((item, index) => {
+    const date = new Date(item.timestamp);
+    const timeAgo = formatTimeAgo(item.timestamp);
+    const hasActionLog = item.actionLog && item.actionLog.length > 0;
+    const consentOrPayBadge = item.consentOrPay ? '<span class="consent-or-pay-badge" title="Consent-or-pay detected">⚠️ Pay Wall</span>' : '';
+    const bannerStatus = item.bannerClosed ? '✓ Closed' : '⚠ Open';
+    const bannerClass = item.bannerClosed ? 'success' : 'warn';
+    
+    // Format action log
+    const actionLogHtml = hasActionLog ? `
+      <div class="history-action-log" id="actionLog${index}" style="display:none;">
+        <div class="action-log-title">Action Log:</div>
+        ${item.actionLog.map(log => `
+          <div class="action-log-entry">
+            <span class="action-log-time">${log.time}ms</span>
+            <span class="action-log-action">${esc(log.action)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+    
+    return `
+      <div class="history-item">
+        <div class="history-item-header">
+          <div class="history-item-domain">
+            ${esc(item.domain)}
+            ${consentOrPayBadge}
+          </div>
+          <div class="history-item-date" title="${date.toLocaleString()}">${timeAgo}</div>
+        </div>
+        <div class="history-item-stats">
+          <div class="history-item-stat">
+            <span class="history-item-stat-icon">🚫</span>
+            <span>${item.denied} denied</span>
+          </div>
+          <div class="history-item-stat">
+            <span class="history-item-stat-icon">🔒</span>
+            <span>${item.kept} kept</span>
+          </div>
+          <div class="history-item-stat">
+            <span class="history-item-stat-icon">⚙</span>
+            <span>${item.cmp}</span>
+          </div>
+          <div class="history-item-stat">
+            <span class="history-item-stat-icon ${bannerClass}">🎯</span>
+            <span>${bannerStatus}</span>
+          </div>
+        </div>
+        ${hasActionLog ? `
+          <div class="history-item-expand">
+            <button class="expand-log-btn" onclick="toggleActionLog(${index})">
+              <span class="expand-icon" id="expandIcon${index}">▶</span>
+              View ${item.actionLog.length} actions
+            </button>
+          </div>
+        ` : ''}
+        ${actionLogHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+// Toggle action log visibility (global function for inline onclick)
+window.toggleActionLog = function(index) {
+  const log = document.getElementById(`actionLog${index}`);
+  const icon = document.getElementById(`expandIcon${index}`);
+  if (log && icon) {
+    const isHidden = log.style.display === 'none';
+    log.style.display = isHidden ? 'block' : 'none';
+    icon.textContent = isHidden ? '▼' : '▶';
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all history? This cannot be undone.')) return;
+  
+  await chrome.storage.local.set({ denyHistory: [] });
+  loadHistory();
+}
+
+function extractDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  
+  return new Date(timestamp).toLocaleDateString();
+}
+
+// Clear history button handler
+document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory);
+
+// ── Donation Prompt Management ─────────────────────────────────────────────
+
+const DONATION_SNOOZE_DAYS = 14;
+
+async function showDonationPrompt(deniedCount) {
+  const data = await chrome.storage.local.get(['runCount', 'donationPromptSnoozedUntil', 'lastDonationPrompt']);
+  const runCount = data.runCount || 0;
+  const snoozedUntil = data.donationPromptSnoozedUntil || 0;
+  const lastShown = data.lastDonationPrompt || 0;
+  
+  // Don't show if snoozed, or shown in last 24 hours
+  const dayInMs = 24 * 60 * 60 * 1000;
+  if (Date.now() < snoozedUntil || (Date.now() - lastShown < dayInMs)) return;
+  
+  // Show after 5th use, or if user denied a lot (50+) this session
+  if (runCount >= 5 || deniedCount >= 50) {
+    if (donationPrompt) {
+      // Get total denied from history for milestone messages
+      const histData = await chrome.storage.local.get('denyHistory');
+      const history = histData.denyHistory || [];
+      const totalDenied = history.reduce((sum, item) => sum + item.denied, 0);
+      
+      // Set contextual message
+      const titleEl = document.getElementById('donationPromptTitle');
+      if (titleEl) {
+        if (totalDenied >= 1000) {
+          titleEl.textContent = `🎉 You've blocked ${totalDenied.toLocaleString()}+ trackers!`;
+        } else if (totalDenied >= 500) {
+          titleEl.textContent = `Amazing! ${totalDenied.toLocaleString()} trackers blocked!`;
+        } else if (deniedCount >= 50) {
+          titleEl.textContent = `${deniedCount} trackers denied this session! 💪`;
+        } else {
+          titleEl.textContent = 'Enjoying DenyStealthCookies?';
+        }
+      }
+      
+      donationPrompt.style.display = 'block';
+      chrome.storage.local.set({ lastDonationPrompt: Date.now() });
+    }
+  }
+}
+
+// Donation prompt dismiss handler (snooze for 14 days)
+document.getElementById('dismissDonationPrompt')?.addEventListener('click', () => {
+  if (donationPrompt) donationPrompt.style.display = 'none';
+  const snoozeUntil = Date.now() + (DONATION_SNOOZE_DAYS * 24 * 60 * 60 * 1000);
+  chrome.storage.local.set({ donationPromptSnoozedUntil: snoozeUntil });
+});
+
 // ── Settings, Donation & Telemetry ─────────────────────────────────────────
 
 async function initSettings() {
-  const data = await chrome.storage.local.get(['telemetryOptIn','autoMode','donationDismissed','runCount']);
+  const data = await chrome.storage.local.get(['telemetryOptIn','autoMode','donationSnoozedUntil','runCount']);
 
   // Telemetry toggle
   const telToggle = document.getElementById('telemetryToggle');
@@ -239,13 +496,23 @@ async function initSettings() {
     autoToggle.checked = data.autoMode === true;
     autoToggle.addEventListener('change', () => {
       chrome.storage.local.set({ autoMode: autoToggle.checked });
+      // Update badge visibility
+      const badge = document.getElementById('autoModeBadge');
+      if (badge) {
+        if (autoToggle.checked) {
+          badge.classList.add('active');
+        } else {
+          badge.classList.remove('active');
+        }
+      }
     });
   }
 
-  // Donation bar — show after 3rd use, unless dismissed
+  // Donation bar — show after 3rd use, unless snoozed
   const runCount = (data.runCount || 0);
+  const snoozedUntil = data.donationSnoozedUntil || 0;
   const donationBar = document.getElementById('donationBar');
-  if (donationBar && runCount >= 3 && !data.donationDismissed) {
+  if (donationBar && runCount >= 3 && Date.now() >= snoozedUntil) {
     donationBar.style.display = 'flex';
   }
 
@@ -253,7 +520,8 @@ async function initSettings() {
   if (dismissBtn) {
     dismissBtn.addEventListener('click', () => {
       if (donationBar) donationBar.style.display = 'none';
-      chrome.storage.local.set({ donationDismissed: true });
+      const snoozeUntil = Date.now() + (DONATION_SNOOZE_DAYS * 24 * 60 * 60 * 1000);
+      chrome.storage.local.set({ donationSnoozedUntil: snoozeUntil });
     });
   }
 }
