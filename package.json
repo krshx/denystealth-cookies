@@ -1,0 +1,15 @@
+{
+  "name": "denystealth-cookies-testing",
+  "version": "1.0.0",
+  "description": "Automated testing suite for DenyStealthCookies extension",
+  "scripts": {
+    "test": "node test-automation.js",
+    "test:quick": "node test-automation.js --quick",
+    "install-deps": "npm install puppeteer --save-dev"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.0.0"
+  },
+  "author": "krshx",
+  "license": "MIT"
+}
