@@ -6,6 +6,7 @@
   <title>DenyStealthCookies</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="chart.js"></script>
   <style>
     :root {
       --bg: #0a0c0f;
@@ -179,6 +180,177 @@
     .deny-btn.running .spinner { display: block; }
     .deny-btn.running .btn-icon { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Teach Button ── */
+    .teach-btn {
+      width: 100%;
+      background: var(--surface2);
+      color: var(--info);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-top: 8px;
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .teach-btn:hover {
+      background: var(--info-dim);
+      border-color: var(--info);
+      color: var(--info);
+      box-shadow: 0 0 16px rgba(0, 200, 255, 0.15);
+    }
+    .teach-btn:active {
+      transform: scale(0.98);
+    }
+    .teach-btn.teaching-active {
+      background: var(--info-dim);
+      border-color: var(--info);
+      color: var(--info);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* ── Learned Patterns Section ── */
+    .learned-patterns-section {
+      margin: 12px 16px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .learned-patterns-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .clear-patterns-btn {
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .clear-patterns-btn:hover {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Dashboard/Analytics ── */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      padding: 12px;
+    }
+    .chart-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .chart-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chart-container {
+      position: relative;
+      height: 180px;
+      margin-bottom: 8px;
+    }
+    .chart-container.small {
+      height: 140px;
+    }
+    .dashboard-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .dashboard-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+    }
+    .dashboard-stat-value {
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--success);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .dashboard-stat-value.warning { color: var(--warn); }
+    .dashboard-stat-value.error { color: var(--accent); }
+    .dashboard-stat-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Learned Patterns ── */
+    .learned-patterns-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .learned-pattern-item {
+      padding: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .learned-pattern-text {
+      flex: 1;
+      font-family: var(--mono);
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .learned-pattern-meta {
+      font-size: 9px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .learned-pattern-badge {
+      background: var(--success-dim);
+      color: var(--success);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-family: var(--mono);
+      letter-spacing: 0.05em;
+    }
 
     /* ── Results ── */
     .results-section {
@@ -399,6 +571,21 @@
       <span class="spinner"></span>
       <span id="btnText">Deny All Non-Essential Consents</span>
     </button>
+    
+    <!-- Teaching mode button -->
+    <button class="teach-btn" id="teachBtn" title="Teach the extension which button to click">
+      <span class="btn-icon">🎯</span>
+      <span id="teachBtnText">Extension Missed a Popup?</span>
+    </button>
+  </div>
+
+  <!-- Learned patterns section -->
+  <div class="learned-patterns-section" id="learnedPatternsSection" style="display: none;">
+    <div class="learned-patterns-header">
+      <span>📚 Learned Patterns for This Site</span>
+      <button class="clear-patterns-btn" id="clearPatternsBtn" title="Clear learned patterns">Clear</button>
+    </div>
+    <div class="learned-patterns-list" id="learnedPatternsList"></div>
   </div>
 
   <!-- Banner closed status (shown below button after scan) -->
@@ -425,6 +612,7 @@
       <button class="tab-btn tab-kept" data-tab="kept" id="tabKept">🔒 Kept</button>
       <button class="tab-btn tab-err" data-tab="errors" id="tabErrors">⚠ Errors</button>
       <button class="tab-btn tab-history" data-tab="history" id="tabHistory">📊 History</button>
+      <button class="tab-btn tab-dashboard" data-tab="dashboard" id="tabDashboard">📈 Analytics</button>
     </div>
 
     <div class="tab-panel active" id="panelRemoved">
@@ -443,6 +631,52 @@
       </div>
       <div class="history-list" id="historyList">
         <div class="result-empty">No history yet. Start denying consents!</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panelDashboard">
+      <div class="dashboard-grid">
+        <div class="dashboard-stats">
+          <div class="dashboard-stat">
+            <div class="dashboard-stat-value" id="totalDenials">0</div>
+            <div class="dashboard-stat-label">Total Denials</div>
+          </div>
+          <div class="dashboard-stat">
+            <div class="dashboard-stat-value" id="successRate">0%</div>
+            <div class="dashboard-stat-label">Success Rate</div>
+          </div>
+          <div class="dashboard-stat">
+            <div class="dashboard-stat-value warning" id="partialDenials">0</div>
+            <div class="dashboard-stat-label">Partial</div>
+          </div>
+          <div class="dashboard-stat">
+            <div class="dashboard-stat-value error" id="failedDenials">0</div>
+            <div class="dashboard-stat-label">Failed</div>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🎯 Denial Success Overview</div>
+          <div class="chart-container small">
+            <canvas id="successChart"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">📊 Denial Types</div>
+          <div class="chart-container small">
+            <canvas id="typesChart"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">📈 Activity Over Time (Last 30 Days)</div>
+          <div class="chart-container">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">🏆 Top Sites by Denials</div>
+          <div class="chart-container">
+            <canvas id="topSitesChart"></canvas>
+          </div>
+        </div>
       </div>
     </div>
   </div>

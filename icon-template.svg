@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Cookie base -->
+  <circle cx="64" cy="64" r="52" fill="#D4A574" stroke="#8B6F47" stroke-width="3"/>
+  
+  <!-- Cookie bite effect (optional) -->
+  <circle cx="24" cy="32" r="18" fill="#0D1117" opacity="0"/>
+  
+  <!-- Chocolate chips -->
+  <circle cx="45" cy="50" r="6" fill="#5C3D2E"/>
+  <circle cx="72" cy="45" r="5" fill="#5C3D2E"/>
+  <circle cx="58" cy="70" r="5.5" fill="#5C3D2E"/>
+  <circle cx="78" cy="68" r="6" fill="#5C3D2E"/>
+  <circle cx="48" cy="82" r="4.5" fill="#5C3D2E"/>
+  <circle cx="82" cy="52" r="4" fill="#5C3D2E"/>
+  <circle cx="38" cy="68" r="4.5" fill="#5C3D2E"/>
+  
+  <!-- Light spots for texture -->
+  <circle cx="52" cy="55" r="3" fill="#E8C9A0" opacity="0.6"/>
+  <circle cx="70" cy="75" r="2.5" fill="#E8C9A0" opacity="0.6"/>
+  <circle cx="42" cy="75" r="2" fill="#E8C9A0" opacity="0.5"/>
+  
+  <!-- Prohibition circle (red with good contrast) -->
+  <circle cx="64" cy="64" r="48" fill="none" stroke="#E63946" stroke-width="10"/>
+  
+  <!-- Prohibition slash -->
+  <line x1="28" y1="28" x2="100" y2="100" stroke="#E63946" stroke-width="10" stroke-linecap="round"/>
+  
+  <!-- Inner shadow for prohibition circle -->
+  <circle cx="64" cy="64" r="48" fill="none" stroke="#C1121F" stroke-width="2" opacity="0.5"/>
+</svg>
