@@ -1,8 +1,8 @@
-// content.js — DenyStealthCookies v1.2
-// Production-grade cookie consent denial with multi-tab navigation, iframe support,
-// recursive section scanning, and comprehensive CMP coverage.
-// Handles: TCF/IAB, OneTrust, Cookiebot, Didomi, Usercentrics, TrustArc, Quantcast,
-// and generic CMPs with multi-level structures.
+// content.js — Guardr v2.0
+// Universal semantic detection for cookie consent denial with comprehensive multilingual support.
+// Handles: ANY CMP using semantic analysis, plus TCF/IAB, OneTrust, Cookiebot, Didomi, Usercentrics.
+// Supports 15+ languages and all dark pattern variations.
+// ARCHITECTURE: Universal Detection (primary) → CMP APIs (fallback) → Brute force (last resort)
 
 (function () {
   'use strict';
@@ -10,11 +10,18 @@
   // ── Environment Check ──────────────────────────────────────────────────────
   // Extension content scripts always run with JS enabled, but check for CSP issues
   if (typeof window === 'undefined' || !document) {
-    console.error('[DenyStealthCookies] Cannot run: no DOM access');
+    console.error('[Guardr] Cannot run: no DOM access');
     return;
   }
 
-  const VERSION = '1.4.0';
+  // ── Debug Configuration ────────────────────────────────────────────────────
+  // Set to false for production to disable all console logging
+  const DEBUG = true;
+  const log = DEBUG ? console.log.bind(console) : () => {};
+  // Always log errors regardless of DEBUG mode
+  const logError = console.error.bind(console);
+
+  const VERSION = '2.1.4';
   const MANDATORY_TCF_PURPOSES = new Set([10, 11]);
   const MAX_WAIT_PER_SECTION = 1000; // ms - wait for dynamic content after clicking tabs
   const MAX_TOTAL_RUNTIME = 30000; // ms - safety timeout for entire operation
@@ -30,78 +37,77 @@
     10:'Develop and improve services',11:'Use limited data to select content',
   };
 
-  // Text patterns for buttons that mean "deny/reject all non-essential"
-  const DENY_PATTERNS = [
-    /^deny( all)?$/i,/^reject( all)?$/i,/^refuse( all)?$/i,/^decline( all)?$/i,
-    /^object( all)?$/i,/^object to all$/i, // For legitimate interests
-    /^no[,.]? thanks?$/i,/^no,? thanks?$/i,/^skip$/i,/^(i )?disagree( all)?$/i,
-    /^(only |just )?(necessary|essential|required|functional)( cookies?)?( only)?$/i,
-    /^(allow|use|accept) (only )?(necessary|essential|required|functional)( cookies?)?( only)?$/i,
-    /^continue without (accepting|agreeing|consenting|cookies?)$/i,
-    /^proceed without (accepting|consenting)$/i,
-    /^do not (accept|consent|agree)$/i,
-    // BBC and similar sites: "Reject additional cookies", "Reject all cookies"
-    /reject (additional|all|non-essential|optional|tracking|analytics|marketing)( cookies?)?$/i,
-    /decline (additional|all|non-essential|optional|tracking)( cookies?)?$/i,
-    /deny (additional|all|non-essential|optional)( cookies?)?$/i,
-    /^i (do not|don'?t) (accept|consent|agree)$/i,
-    /^opt out( of all)?$/i,/^withdraw( all)?( consent)?$/i,
-    /^tout refuser$/i,/^refuser( tout)?$/i,/^non merci$/i,/^continuer sans accepter$/i,  // French
-    /^alle ablehnen$/i,/^ablehnen$/i,/^nein danke$/i,                                    // German
-    /^rechazar( todo)?$/i,/^no gracias$/i,                                                // Spanish
-    /^rifiuta( tutto)?$/i,/^no grazie$/i,                                                 // Italian
-    /^rejeitar( tudo)?$/i,/^não obrigado$/i,                                             // Portuguese
-    /^afwijzen$/i,/^weigeren$/i,                                                          // Dutch
-  ];
-
-  // Text patterns for "save/confirm choices" buttons (after unchecking toggles)
-  const CONFIRM_PATTERNS = [
-    /^save( my)? (preferences?|choices?|settings?|selection)$/i,
-    /^confirm( my)? (choices?|selection|preferences?|settings?)$/i,
-    /^(accept|allow)( my)? selection$/i,
-    /^apply( settings?)?$/i,/^update( preferences?)?$/i,
-    /^done$/i,/^got it$/i,/^close$/i,/^dismiss$/i,
-    /^(ok|okay)$/i,/^continue$/i,
-    /^enregistrer( mes (choix|pr[ée]f[ée]rences))?$/i, // French
-    /^speichern$/i,/^weiter$/i,                          // German
-  ];
-
-  // Keywords: do NOT uncheck these (mandatory/essential)
-  const MANDATORY_KW = [
-    'strictly necessary','strictly-necessary','essential','necessary cookies',
-    'technically required','technically necessary','basic functionality',
-    'security','fraud prevention','detect fraud','ensure security',
-    'fix errors','deliver content','technically deliver','functional',
-    'prevent fraud','system security','required','mandatory',
-    'performance of contract','legal obligation','vital interests',
-    'deliver and present','technical compatibility','transmission of content',
-  ];
+  // ══════════════════════════════════════════════════════════════════════════
+  // ═══ SEMANTIC LIBRARY - Comprehensive button patterns for all CMPs  ═══════
+  // ══════════════════════════════════════════════════════════════════════════
+  // Using external SemanticLibrary for maintainability and comprehensive coverage
+  // Covers 15+ languages, dark patterns, and all CMP variations
+  
+  // Legacy pattern arrays kept for backwards compatibility with tryDenyButton
+  // These now reference the comprehensive SemanticLibrary
+  const DENY_PATTERNS = Object.values(SemanticLibrary.DENY_PATTERNS).flat();
+  const CONFIRM_PATTERNS = Object.values(SemanticLibrary.CONFIRM_PATTERNS).flat();
+  const MANDATORY_KW = SemanticLibrary.MANDATORY_KEYWORDS;
 
   // ── Universal Modal & Button Detection ────────────────────────────────────
   // This system detects ANY modal/overlay and intelligently classifies buttons
   // Works universally without needing site-specific patterns
   
   /**
+   * Recursively find elements inside shadow DOMs
+   * @param {Element|ShadowRoot} root - Root to search from
+   * @param {string} selector - CSS selector
+   * @param {number} depth - Maximum depth to recurse
+   * @param {Array} results - Accumulator for results
+   * @returns {Array<Element>}
+   */
+  function findInShadowDOM(root, selector, depth = 3, results = []) {
+    if (depth <= 0) return results;
+    
+    // Query from the current root
+    const elements = root.querySelectorAll(selector);
+    results.push(...Array.from(elements));
+    
+    // Recursively search inside shadow roots
+    const allElements = root.querySelectorAll('*');
+    for (const el of allElements) {
+      if (el.shadowRoot) {
+        findInShadowDOM(el.shadowRoot, selector, depth - 1, results);
+      }
+    }
+    
+    return results;
+  }
+  
+  /**
    * Find all modals/overlays on page (by structure, not keywords)
    * Returns elements that look like modals based on CSS properties
+   * INCLUDES SHADOW DOM SUPPORT for CMPs like Usercentrics
    */
   function findAllModals() {
-    const candidates = document.querySelectorAll(
+    const selector = 
       'dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"],' +
       '[class*="modal"],[class*="overlay"],[class*="popup"],[class*="banner"],' +
       '[class*="panel"],[class*="drawer"],[class*="slide"],[class*="onetrust"],' +
       '[class*="cookie"],[class*="consent"],[class*="privacy"],[class*="gdpr"],' +
+      '[class*="usercentrics"],[id*="usercentrics"],[data-testid*="uc-"],' +
       '[id*="modal"],[id*="overlay"],[id*="popup"],[id*="banner"],' +
       '[id*="panel"],[id*="drawer"],[id*="onetrust"],' +
-      '[id*="cookie"],[id*="consent"],[id*="privacy"],[id*="gdpr"]'
-    );
+      '[id*="cookie"],[id*="consent"],[id*="privacy"],[id*="gdpr"]';
     
-    console.log(`[DenyStealthCookies] findAllModals: Found ${candidates.length} candidate elements`);
+    // Find candidates in main DOM
+    const candidates = Array.from(document.querySelectorAll(selector));
+    
+    // Also search inside shadow DOMs (for Usercentrics, etc.)
+    const shadowCandidates = findInShadowDOM(document, selector);
+    candidates.push(...shadowCandidates);
+    
+    console.log(`[Guardr] findAllModals: Found ${candidates.length} candidate elements (including shadow DOM)`);
     
     const modals = [];
     for (const el of candidates) {
       if (!isVisible(el)) {
-        console.log('[DenyStealthCookies]   Candidate not visible, skipping');
+        console.log('[Guardr]   Candidate not visible, skipping');
         continue;
       }
       
@@ -118,7 +124,8 @@
       // Size requirements: More lenient for consent elements
       // Cookie bars are often wide but short (e.g., 1400x60)
       const isReasonablyLarge = rect.width > 200 && rect.height > 100;
-      const isWideBar = rect.width > 500 && rect.height > 40; // Wide but short bars
+      const isWideBar = rect.width > 500 && rect.height > 40;
+      const isCompactConsent = rect.width > 150 && rect.height > 30; // Small consent buttons/badges // Wide but short bars
       
       // Also check if it looks like a consent element by ID/class
       const id = el.id?.toLowerCase() || '';
@@ -127,21 +134,23 @@
                                cls.includes('cookie') || cls.includes('consent') || 
                                cls.includes('gdpr') || cls.includes('privacy') ||
                                id.includes('onetrust') || cls.includes('onetrust') ||
+                               id.includes('usercentrics') || cls.includes('usercentrics') ||
                                id.includes('cmpbox') || cls.includes('cmpbox');
       
-      console.log(`[DenyStealthCookies]   Candidate: pos=${style.position}, zIndex=${zIndex}, size=${rect.width}x${rect.height}, tag=${el.tagName}, looksLikeConsent=${looksLikeConsent}, id=${id.substring(0,30)}`);
+      console.log(`[Guardr]   Candidate: pos=${style.position}, zIndex=${zIndex}, size=${rect.width}x${rect.height}, tag=${el.tagName}, looksLikeConsent=${looksLikeConsent}, id=${id.substring(0,30)}`);
       
       // Accept if:
-      // 1. Looks like consent AND (reasonably large OR wide bar), OR
+      // 1. Looks like consent AND (reasonably large OR wide bar OR compact), OR
       // 2. Properly positioned with valid z-index AND reasonably large
-      if (looksLikeConsent && (isReasonablyLarge || isWideBar)) {
-        console.log('[DenyStealthCookies]   ✓ Modal detected (consent element)!');
+      // The addition of isCompactConsent allows smaller consent elements to be detected
+      if (looksLikeConsent && (isReasonablyLarge || isWideBar || isCompactConsent)) {
+        console.log('[Guardr]   ✓ Modal detected (consent element)!');
         modals.push(el);
       } else if (isPositioned && hasValidZIndex && isReasonablyLarge) {
-        console.log('[DenyStealthCookies]   ✓ Modal detected (positioned overlay)!');
+        console.log('[Guardr]   ✓ Modal detected (positioned overlay)!');
         modals.push(el);
       } else {
-        console.log(`[DenyStealthCookies]   ✗ Rejected: positioned=${isPositioned}, validZ=${hasValidZIndex}, consent=${looksLikeConsent}, largeEnough=${isReasonablyLarge}, wideBar=${isWideBar}`);
+        console.log(`[Guardr]   ✗ Rejected: positioned=${isPositioned}, validZ=${hasValidZIndex}, consent=${looksLikeConsent}, largeEnough=${isReasonablyLarge}, wideBar=${isWideBar}, compact=${isCompactConsent || false}`);
       }
     }
     
@@ -195,7 +204,7 @@
     const checkTime = referenceTime || performance.timing?.navigationStart || (Date.now() - 60000);
     const appearedRecently = Date.now() - checkTime < 60000; // 60 second window (extended for slow-loading sites)
     
-    console.log(`[DenyStealthCookies] isPrivacyModal check:`, {
+    console.log(`[Guardr] isPrivacyModal check:`, {
       hasPrivacyKeyword,
       hasChoiceKeyword, 
       hasButtons,
@@ -212,59 +221,45 @@
   }
   
   /**
-   * Classify a button's intent: 'accept', 'reject', 'manage', or 'unknown'
-   * Uses semantic analysis of text and context
+   * Classify a button's intent using comprehensive SemanticLibrary
+   * Supports 15+ languages and all dark pattern variations
+   * @param {HTMLElement} button - Button element to classify
+   * @returns {'deny'|'accept'|'manage'|'confirm'|'unknown'}
    */
   function classifyButton(button) {
-    const text = textOf(button).toLowerCase().trim();
-    const attrs = [
-      button.getAttribute('aria-label'),
-      button.getAttribute('title'),
-      button.id,
-      button.className
-    ].filter(Boolean).join(' ').toLowerCase();
+    // Gather all text sources
+    const text = textOf(button);
+    const ariaLabel = button.getAttribute('aria-label') || '';
+    const title = button.getAttribute('title') || '';
     
-    const combined = text + ' ' + attrs;
+    // Try each text source with SemanticLibrary
+    const sources = [text, ariaLabel, title].filter(Boolean);
     
-    // Accept/Allow patterns (we want to AVOID these)
-    const acceptPatterns = [
-      /\b(accept|allow|agree|consent|yes|(allow|accept)\s*(all|everything))\b/i,
-      /\b(i\s*agree|got\s*it|okay|ok)\b/i,
-      /\bcontinue\b/i, // Only if not "continue without"
-    ];
-    
-    // Reject/Deny patterns (we WANT these)
-    const rejectPatterns = [
-      /\b(reject|deny|decline|refuse|disagree|no)\b/i,
-      /\b(opt\s*out|do\s*not|don'?t)\b/i,
-      /\b(only\s*(necessary|essential|required)|necessary\s*only)\b/i,
-      /\b(continue\s*without|proceed\s*without|no\s*thanks?)\b/i,
-      /\b(save\s*(my\s*)?choice|confirm\s*choice)\b/i,
-    ];
-    
-    // Manage/Settings patterns (neutral - opens settings)
-    const managePatterns = [
-      /\b(manage|customize|settings|preferences|options|choices|learn\s*more|more\s*options)\b/i,
-      /\b(view\s*(cookie\s*)?(settings|preferences))\b/i,
-    ];
-    
-    // Check patterns in order of priority
-    if (rejectPatterns.some(p => p.test(combined))) {
-      // But make sure it's not a false positive like "I do not reject"
-      if (!/\bdo\s*not\s*(reject|deny|decline)\b/i.test(combined)) {
-        return 'reject';
+    for (const source of sources) {
+      const classification = SemanticLibrary.classifyButton(source);
+      if (classification !== 'unknown') {
+        // Map 'deny' to 'reject' for backwards compatibility with existing code
+        return classification === 'deny' ? 'reject' : classification;
       }
     }
     
-    if (acceptPatterns.some(p => p.test(combined))) {
-      // Exclude "continue without accepting"
-      if (!/\b(without|no)\b/i.test(text)) {
-        return 'accept';
-      }
-    }
+    // Fallback: check button attributes for hints
+    const id = button.id || '';
+    const className = button.className || '';
+    const combined = (id + ' ' + className).toLowerCase();
     
-    if (managePatterns.some(p => p.test(combined))) {
+    // Check common CSS class patterns
+    if (/\b(reject|deny|decline|refuse)\b/i.test(combined)) {
+      return 'reject';
+    }
+    if (/\b(accept|allow|agree|consent)\b/i.test(combined)) {
+      return 'accept';
+    }
+    if (/\b(manage|settings?|preferences?|customize)\b/i.test(combined)) {
       return 'manage';
+    }
+    if (/\b(save|confirm|apply)\b/i.test(combined)) {
+      return 'confirm';
     }
     
     return 'unknown';
@@ -278,34 +273,42 @@
    */
   async function handleUniversalModal(depth = 0, processedModals = new WeakSet()) {
     if (depth > 2) {
-      console.log('[DenyStealthCookies] Max recursion depth reached, stopping');
+      console.log('[Guardr] Max recursion depth reached, stopping');
       return false;
     }
     
-    console.log('[DenyStealthCookies] Universal Detection: Scanning for modals...' + (depth > 0 ? ` (step ${depth + 1})` : ''));
+    console.log('[Guardr] Universal Detection: Scanning for modals...' + (depth > 0 ? ` (step ${depth + 1})` : ''));
     const modals = findAllModals();
-    console.log(`[DenyStealthCookies] Found ${modals.length} modal(s) on page`);
+    console.log(`[Guardr] Found ${modals.length} modal(s) on page`);
     
     for (const modal of modals) {
       // Skip already processed modals
       if (processedModals.has(modal)) {
-        console.log('[DenyStealthCookies] Modal already processed (first step), skipping');
+        console.log('[Guardr] Modal already processed (first step), skipping');
         continue;
       }
       
       if (!isPrivacyModal(modal)) {
-        console.log('[DenyStealthCookies] Modal found but not privacy-related, skipping');
+        console.log('[Guardr] Modal found but not privacy-related, skipping');
         continue;
       }
       
-      console.log('[DenyStealthCookies] ✓ Privacy modal detected! Analyzing buttons...');
+      console.log('[Guardr] ✓ Privacy modal detected! Analyzing buttons...');
       
-      // Find all buttons in modal
-      const buttons = Array.from(modal.querySelectorAll(
-        'button,[role="button"],a[class*="btn"],a[class*="button"],input[type="button"],input[type="submit"]'
-      )).filter(isVisible);
+      // Find all buttons in modal (including shadow DOM)
+      const buttonSelector = 'button,[role="button"],a[class*="btn"],a[class*="button"],input[type="button"],input[type="submit"]';
+      let buttons = Array.from(modal.querySelectorAll(buttonSelector));
       
-      console.log(`[DenyStealthCookies] Found ${buttons.length} buttons in modal`);
+      // Also search inside shadow DOM if modal has one
+      if (modal.shadowRoot) {
+        const shadowButtons = findInShadowDOM(modal.shadowRoot, buttonSelector);
+        buttons.push(...shadowButtons);
+        console.log(`[Guardr] Found ${shadowButtons.length} additional buttons in shadow DOM`);
+      }
+      
+      buttons = buttons.filter(isVisible);
+      
+      console.log(`[Guardr] Found ${buttons.length} buttons in modal`);
       
       // Classify all buttons
       const classified = buttons.map(btn => ({
@@ -316,7 +319,7 @@
       
       // Log classification
       classified.forEach(({ text, type }) => {
-        console.log(`[DenyStealthCookies]   Button: "${text.substring(0, 40)}" → ${type}`);
+        console.log(`[Guardr]   Button: "${text.substring(0, 40)}" → ${type}`);
       });
       
       // Priority: reject > manage > unknown > accept (never accept!)
@@ -325,28 +328,41 @@
       if (!targetButton) {
         // No reject button found - try manage/settings to access more options
         targetButton = classified.find(b => b.type === 'manage');
-        console.log('[DenyStealthCookies] No reject button found, trying manage/settings');
+        console.log('[Guardr] No reject button found, trying manage/settings');
       }
       
       if (!targetButton) {
         // Last resort: click any unknown button (but never 'accept')
         targetButton = classified.find(b => b.type === 'unknown');
-        console.log('[DenyStealthCookies] No reject/manage found, trying unknown button');
+        console.log('[Guardr] No reject/manage found, trying unknown button');
       }
       
       if (targetButton) {
-        console.log(`[DenyStealthCookies] Clicking button: "${targetButton.text}"`);
+        console.log(`[Guardr] Clicking button: "${targetButton.text}"`);
         logAction(`Universal detection: Clicking "${targetButton.text}" (type: ${targetButton.type})`);
         
         // Mark this modal as processed before clicking
         processedModals.add(modal);
         
         clickElement(targetButton.element);
+        
+        // LEARN from successful button click
+        if (typeof LearningModule !== 'undefined' && targetButton.type === 'reject') {
+          const domain = getDomainKey(window.location.href);
+          await LearningModule.learnFromSuccess(
+            targetButton.text,
+            'deny', // Map reject → deny for learning
+            domain,
+            'auto'
+          );
+          console.log('[Guardr] 📚 Learned from successful button click');
+        }
+        
         await sleep(800);
         
         // If we clicked "manage", wait for settings panel to appear and scan again
         if (targetButton.type === 'manage') {
-          console.log('[DenyStealthCookies] Clicked manage button, waiting for settings panel to appear...');
+          console.log('[Guardr] Clicked manage button, waiting for settings panel to appear...');
           
           // Don't mark banner closed yet - there's another step
           R.bannerFound = true;
@@ -360,9 +376,9 @@
           await sleep(1800); // Wait longer for settings panel animation/load (OneTrust can be slow)
           
           // Scan for NEW modals (side panels, drawers, etc.) that appeared after clicking manage
-          console.log('[DenyStealthCookies] Scanning for new modals (settings panels, side drawers)...');
+          console.log('[Guardr] Scanning for new modals (settings panels, side drawers)...');
           const allModalsNow = findAllModals();
-          console.log(`[DenyStealthCookies] Total modals now visible: ${allModalsNow.length}`);
+          console.log(`[Guardr] Total modals now visible: ${allModalsNow.length}`);
           
           // Debug: Show details of all modals found
           allModalsNow.forEach((m, i) => {
@@ -370,27 +386,36 @@
             const cls = m.className || '(no class)';
             const tag = m.tagName;
             const isProcessed = processedModals.has(m);
-            console.log(`[DenyStealthCookies]   Modal ${i+1}: ${tag} id="${id}" class="${cls}" processed=${isProcessed}`);
+            console.log(`[Guardr]   Modal ${i+1}: ${tag} id="${id}" class="${cls}" processed=${isProcessed}`);
           });
           
           // Process any NEW modals that weren't in our processed set
           for (const newModal of allModalsNow) {
             if (processedModals.has(newModal)) {
-              console.log('[DenyStealthCookies] Skipping already-processed first modal');
+              console.log('[Guardr] Skipping already-processed first modal');
               continue;
             }
             
             // Check if privacy-related, using manageClickTime as reference for "appeared recently"
             if (!isPrivacyModal(newModal, manageClickTime)) {
-              console.log('[DenyStealthCookies] New modal not privacy-related (or appeared too long ago), skipping');
+              console.log('[Guardr] New modal not privacy-related (or appeared too long ago), skipping');
               continue;
             }
             
-            console.log('[DenyStealthCookies] ✓ NEW settings panel detected! Analyzing buttons...');
+            console.log('[Guardr] ✓ NEW settings panel detected! Analyzing buttons...');
             
-            const settingsButtons = Array.from(newModal.querySelectorAll(
-              'button,[role="button"],a[class*="btn"],a[class*="button"],input[type="button"],input[type="submit"]'
-            )).filter(isVisible);
+            // Find buttons in settings panel (including shadow DOM)
+            const buttonSelector = 'button,[role="button"],a[class*="btn"],a[class*="button"],input[type="button"],input[type="submit"]';
+            let settingsButtons = Array.from(newModal.querySelectorAll(buttonSelector));
+            
+            // Also search inside shadow DOM if settings panel has one
+            if (newModal.shadowRoot) {
+              const shadowButtons = findInShadowDOM(newModal.shadowRoot, buttonSelector);
+              settingsButtons.push(...shadowButtons);
+              console.log(`[Guardr] Found ${shadowButtons.length} additional buttons in settings panel shadow DOM`);
+            }
+            
+            settingsButtons = settingsButtons.filter(isVisible);
             
             const settingsClassified = settingsButtons.map(btn => ({
               element: btn,
@@ -398,19 +423,32 @@
               type: classifyButton(btn)
             }));
             
-            console.log(`[DenyStealthCookies] Step 2: Found ${settingsButtons.length} buttons in new settings panel`);
+            console.log(`[Guardr] Step 2: Found ${settingsButtons.length} buttons in new settings panel`);
             settingsClassified.forEach(({ text, type }) => {
-              console.log(`[DenyStealthCookies]   Button: "${text.substring(0, 40)}" → ${type}`);
+              console.log(`[Guardr]   Button: "${text.substring(0, 40)}" → ${type}`);
             });
             
             // Look for reject button
             const rejectBtn = settingsClassified.find(b => b.type === 'reject');
             if (rejectBtn) {
-              console.log(`[DenyStealthCookies] Step 2: Clicking "${rejectBtn.text}" in settings panel`);
+              console.log(`[Guardr] Step 2: Clicking "${rejectBtn.text}" in settings panel`);
               logAction(`Universal detection: Clicking "${rejectBtn.text}" (Step 2)`);
               
               processedModals.add(newModal);
               clickElement(rejectBtn.element);
+              
+              // LEARN from successful settings panel button
+              if (typeof LearningModule !== 'undefined') {
+                const domain = getDomainKey(window.location.href);
+                await LearningModule.learnFromSuccess(
+                  rejectBtn.text,
+                  'deny',
+                  domain,
+                  'auto'
+                );
+                console.log('[Guardr] 📚 Learned from settings panel button');
+              }
+              
               await sleep(800);
               
               // Check if both modals are gone
@@ -432,7 +470,7 @@
           }
           
           // No new settings panel found with reject button - let other phases try
-          console.log('[DenyStealthCookies] No settings panel with reject button found, continuing to other phases');
+          console.log('[Guardr] No settings panel with reject button found, continuing to other phases');
           return false;
         }
         
@@ -456,11 +494,11 @@
         return true;
       }
       
-      console.log('[DenyStealthCookies] No suitable button found in modal');
+      console.log('[Guardr] No suitable button found in modal');
     }
     
     if (depth > 0) {
-      console.log('[DenyStealthCookies] No new modals found in step ' + (depth + 1));
+      console.log('[Guardr] No new modals found in step ' + (depth + 1));
     }
     return false;
   }
@@ -489,9 +527,9 @@
   
   // Inject CSS animations for notifications
   (function injectAnimations() {
-    if (document.getElementById('denystealth-animations')) return;
+    if (document.getElementById('guardr-animations')) return;
     const style = document.createElement('style');
-    style.id = 'denystealth-animations';
+    style.id = 'guardr-animations';
     style.textContent = `
       @keyframes slideIn {
         from { opacity: 0; transform: translateY(-10px); }
@@ -578,7 +616,7 @@
       
       learnedPatterns[domain].successCount++;
       await chrome.storage.local.set({ learnedPatterns });
-      console.log('[DenyStealthCookies] Pattern saved to storage. Total patterns for', domain, ':', learnedPatterns[domain].patterns.length);
+      console.log('[Guardr] Pattern saved to storage. Total patterns for', domain, ':', learnedPatterns[domain].patterns.length);
     } catch(err) {
       logAction(`Failed to save learned pattern: ${err.message}`);
     }
@@ -603,7 +641,7 @@
     };
     R.actionLog.push(logEntry);
     // Also log to console for real-time debugging
-    console.log(`[DenyStealthCookies] ${logEntry.action}`);
+    console.log(`[Guardr] ${logEntry.action}`);
   }
 
   function isVisible(el) {
@@ -616,6 +654,7 @@
   }
 
   // Enhanced click with proper event dispatching for better compatibility
+  // Note: CSP violations may be logged by browser on strict sites - this is expected behavior
   function clickElement(el) {
     try {
       // Try focus first (some buttons need it)
@@ -630,7 +669,8 @@
       el.click();
       return true;
     } catch (err) {
-      // Fallback to simple click
+      // Silently handle CSP violations and other click failures
+      // CSP errors are browser security warnings and can be ignored
       try {
         el.click();
         return true;
@@ -659,7 +699,7 @@
     if (oneTrustPC && isVisible(oneTrustPC) && oneTrustBanner && !isVisible(oneTrustBanner)) {
       // Preference center is open but main banner is closed - this is OK (user opened settings)
       // Don't count as "banner visible"
-      console.log('[DenyStealthCookies] OneTrust PC visible but main banner closed - considering banner gone');
+      console.log('[Guardr] OneTrust PC visible but main banner closed - considering banner gone');
     }
     
     for (const sel of bannerSelectors) {
@@ -962,7 +1002,7 @@
       'button,[role="button"],a[class*="btn"],a[class*="button"],input[type="button"],input[type="submit"]'
     )).filter(isVisible);
     
-    console.log(`[DenyStealthCookies] Phase 1: Scanning ${clickables.length} clickable elements for deny buttons`);
+    console.log(`[Guardr] Phase 1: Scanning ${clickables.length} clickable elements for deny buttons`);
 
     // First pass: buttons inside known banner containers
     for (const el of clickables) {
@@ -971,7 +1011,7 @@
       if (matchesPats(text,DENY_PATTERNS) || matchesPats(attrs,DENY_PATTERNS)) {
         try {
           if (el.closest(BANNER_SEL)) {
-            console.log(`[DenyStealthCookies] Phase 1: Found deny button in banner: "${text || attrs}"`);
+            console.log(`[Guardr] Phase 1: Found deny button in banner: "${text || attrs}"`);
             logAction(`Found deny button in banner: "${text || attrs}"`);
             clickElement(el);
             await sleep(500); // Wait for animation/processing
@@ -1007,7 +1047,7 @@
         // Guard: not inside nav/header content, and text is short (button-like)
         const inNav = el.closest('nav,header') && !el.closest('[class*="banner"],[class*="consent"],[class*="cookie"]');
         if (!inNav && text.length < 60) {
-          console.log(`[DenyStealthCookies] Phase 1: Found deny button (2nd pass): "${text}"`);
+          console.log(`[Guardr] Phase 1: Found deny button (2nd pass): "${text}"`);
           logAction(`Found deny button: "${text}"`);
           clickElement(el);
           await sleep(1000); // Wait longer for animation/processing (OneTrust can be slow)
@@ -1102,19 +1142,102 @@
     }
 
     // Fourth pass: Usercentrics-specific text search (handles cases where buttons load dynamically)
-    const ucContainers = document.querySelectorAll('[id*="usercentrics"],[class*="usercentrics"],[data-testid*="uc-"],[class*="uc-"]');
+    // Usercentrics can use shadow DOM in various ways, need comprehensive search
+    const ucSelectors = [
+      '[id*="usercentrics"]',
+      '[class*="usercentrics"]',
+      '[data-testid*="uc-"]',
+      '[class*="uc-"]',
+      'usercentrics-cmp',
+      'usercentrics-banner',
+      'uc-banner'
+    ];
+    const ucContainers = document.querySelectorAll(ucSelectors.join(','));
+    
     if (ucContainers.length > 0) {
       logAction(`Found ${ucContainers.length} Usercentrics container(s), searching for deny buttons...`);
       let allButtons = [];
       
-      for (const container of ucContainers) {
-        if (!isVisible(container)) continue;
+      // Helper to find buttons in shadow DOM recursively
+      const findButtonsInShadow = (root, depth = 0) => {
+        if (depth > 3) return []; // Prevent infinite recursion
+        let buttons = [];
         
-        const buttons = Array.from(container.querySelectorAll('button,[role="button"]')).filter(isVisible);
+        const directButtons = Array.from(root.querySelectorAll('button,[role="button"]')).filter(isVisible);
+        buttons.push(...directButtons);
+        
+        // Search for nested shadow roots
+        const allElements = root.querySelectorAll('*');
+        for (const el of allElements) {
+          if (el.shadowRoot) {
+            console.log(`[Guardr] Found nested shadow DOM at depth ${depth + 1}`);
+            buttons.push(...findButtonsInShadow(el.shadowRoot, depth + 1));
+          }
+        }
+        return buttons;
+      };
+      
+      for (const container of ucContainers) {
+        // More lenient visibility check for custom elements (they often fail offsetParent check)
+        const rect = container.getBoundingClientRect();
+        const style = window.getComputedStyle(container);
+        const isActuallyVisible = rect.width > 0 && rect.height > 0 && 
+                                   style.display !== 'none' && 
+                                   style.visibility !== 'hidden' &&
+                                   parseFloat(style.opacity) > 0;
+        
+        console.log('[Guardr] Usercentrics container check:', {
+          id: container.id,
+          className: container.className,
+          tagName: container.tagName,
+          hasShadowRoot: !!container.shadowRoot,
+          isActuallyVisible,
+          width: rect.width,
+          height: rect.height,
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+          offsetParent: container.offsetParent
+        });
+        
+        if (!isActuallyVisible) {
+          console.log('[Guardr] Usercentrics container not visible, skipping');
+          continue;
+        }
+        
+        console.log('[Guardr] Usercentrics container:', {
+          id: container.id,
+          className: container.className,
+          tagName: container.tagName,
+          hasShadowRoot: !!container.shadowRoot,
+          innerHTML: container.innerHTML.substring(0, 200)
+        });
+        
+        // Check for shadow DOM (Usercentrics often uses this)
+        let buttons = [];
+        if (container.shadowRoot) {
+          console.log('[Guardr] Found Shadow DOM in Usercentrics container, scanning inside...');
+          buttons = findButtonsInShadow(container.shadowRoot);
+          console.log(`[Guardr] Shadow DOM buttons found: ${buttons.length}`);
+        } else {
+          console.log('[Guardr] No shadow DOM on container, checking regular DOM and children');
+          buttons = Array.from(container.querySelectorAll('button,[role="button"]')).filter(isVisible);
+          console.log(`[Guardr] Regular DOM buttons found: ${buttons.length}`);
+          
+          // Also check if any children have shadow roots
+          const children = container.querySelectorAll('*');
+          for (const child of children) {
+            if (child.shadowRoot) {
+              console.log(`[Guardr] Found shadow DOM in child element: ${child.tagName}`);
+              buttons.push(...findButtonsInShadow(child.shadowRoot));
+            }
+          }
+        }
+        
         allButtons.push(...buttons);
         
         if (buttons.length > 0) {
-          console.log(`[DenyStealthCookies] Found ${buttons.length} buttons in Usercentrics container`);
+          console.log(`[Guardr] Total buttons found in this container: ${buttons.length}`);
         }
         
         for (const btn of buttons) {
@@ -1123,7 +1246,7 @@
           const dataTestId = btn.getAttribute('data-testid') || '';
           const ariaLabel = btn.getAttribute('aria-label') || '';
           
-          console.log('[DenyStealthCookies] Usercentrics button:', {
+          console.log('[Guardr] Usercentrics button:', {
             text: cleanText,
             dataTestId,
             ariaLabel,
@@ -1184,7 +1307,7 @@
       }
     }
 
-    console.log('[DenyStealthCookies] Phase 1 complete: No deny buttons found');
+    console.log('[Guardr] Phase 1 complete: No deny buttons found');
     return false;
   }
 
@@ -1324,20 +1447,66 @@
         // Strategy 4: Try to find "Reject All" button by text within Usercentrics container
         if (!ucHandled) {
           logAction('Usercentrics: Trying text-based button search...');
-          const ucContainers = document.querySelectorAll('[id*="usercentrics"],[class*="usercentrics"],[data-testid*="uc-"],[class*="uc-banner"]');
+          const ucSelectors = [
+            '[id*="usercentrics"]',
+            '[class*="usercentrics"]',
+            '[data-testid*="uc-"]',
+            '[class*="uc-banner"]',
+            'usercentrics-cmp',
+            'usercentrics-banner'
+          ];
+          const ucContainers = document.querySelectorAll(ucSelectors.join(','));
+          
+          // Recursive shadow DOM search helper
+          const findButtonsInShadowRecursive = (root, depth = 0) => {
+            if (depth > 3) return [];
+            let buttons = [];
+            const directButtons = Array.from(root.querySelectorAll('button,[role="button"]')).filter(isVisible);
+            buttons.push(...directButtons);
+            const allElements = root.querySelectorAll('*');
+            for (const el of allElements) {
+              if (el.shadowRoot) {
+                buttons.push(...findButtonsInShadowRecursive(el.shadowRoot, depth + 1));
+              }
+            }
+            return buttons;
+          };
+          
           for (const container of ucContainers) {
-            if (!isVisible(container)) continue;
+            // More lenient visibility check for custom elements
+            const rect = container.getBoundingClientRect();
+            const style = window.getComputedStyle(container);
+            const isActuallyVisible = rect.width > 0 && rect.height > 0 && 
+                                       style.display !== 'none' && 
+                                       style.visibility !== 'hidden' &&
+                                       parseFloat(style.opacity) > 0;
             
-            const buttons = Array.from(container.querySelectorAll('button,[role="button"]')).filter(isVisible);
+            if (!isActuallyVisible) continue;
             
-            console.log(`[DenyStealthCookies] Phase 2 Usercentrics: Found ${buttons.length} buttons in container`);
+            // Check for shadow DOM with recursive search
+            let buttons = [];
+            if (container.shadowRoot) {
+              console.log('[Guardr] Phase 2: Found Shadow DOM in Usercentrics, scanning inside...');
+              buttons = findButtonsInShadowRecursive(container.shadowRoot);
+            } else {
+              buttons = Array.from(container.querySelectorAll('button,[role="button"]')).filter(isVisible);
+              // Also check children for shadow roots
+              const children = container.querySelectorAll('*');
+              for (const child of children) {
+                if (child.shadowRoot) {
+                  buttons.push(...findButtonsInShadowRecursive(child.shadowRoot));
+                }
+              }
+            }
+            
+            console.log(`[Guardr] Phase 2 Usercentrics: Found ${buttons.length} buttons in container${container.shadowRoot ? ' (shadow DOM)' : ''}`);
             
             for (const btn of buttons) {
               const text = textOf(btn).trim();
               const dataTestId = btn.getAttribute('data-testid') || '';
               const ariaLabel = btn.getAttribute('aria-label') || '';
               
-              console.log('[DenyStealthCookies] Phase 2 Usercentrics button:', {
+              console.log('[Guardr] Phase 2 Usercentrics button:', {
                 text: text.substring(0, 40),
                 dataTestId,
                 ariaLabel
@@ -1880,14 +2049,14 @@
         if (!hasPrivacyContent) continue;
         
         // This panel has privacy toggles - scrape them!
-        console.log(`[DenyStealthCookies] Post-Phase-0.5: Found remaining privacy panel with ${togglesInPanel.length} toggles`);
+        console.log(`[Guardr] Post-Phase-0.5: Found remaining privacy panel with ${togglesInPanel.length} toggles`);
         logAction(`Post-Phase-0.5: Scraping toggles from remaining panel (${togglesInPanel.length} found)`);
         
         const scraped = scrapeToggles('Child Panel (Post-Close)', panel);
         totalScraped += scraped;
         
         if (scraped > 0) {
-          console.log(`[DenyStealthCookies] Post-Phase-0.5: Unchecked ${scraped} toggles from remaining panel`);
+          console.log(`[Guardr] Post-Phase-0.5: Unchecked ${scraped} toggles from remaining panel`);
         }
       }
       
@@ -1903,7 +2072,7 @@
       
       return totalScraped;
     } catch (err) {
-      console.error('[DenyStealthCookies] Error scraping remaining panels:', err);
+      console.error('[Guardr] Error scraping remaining panels:', err);
       return 0;
     }
   }
@@ -1913,6 +2082,12 @@
     R = freshResults();
     operationStartTime = Date.now();
     logAction('Starting consent denial operation');
+    
+    // Initialize learning module and load custom patterns
+    if (typeof LearningModule !== 'undefined') {
+      await LearningModule.init();
+      await SemanticLibrary.loadCustomPatterns();
+    }
     
     // Load learned patterns from storage
     await loadLearnedPatterns();
@@ -1965,13 +2140,26 @@
       const denied = await tryDenyButton(true); // Enable learning
       if (denied) logAction('✓ Phase 1 successful: Deny button clicked');
 
-      if (!denied && Date.now() - operationStartTime < MAX_TOTAL_RUNTIME) {
-        // Phase 2: CMP-specific API calls
+      // Phase 2: CMP-specific API calls (always run, even after button click)
+      if (Date.now() - operationStartTime < MAX_TOTAL_RUNTIME) {
         logAction('Phase 2: Attempting CMP-specific API calls');
         await tryCMPApis();
+      }
 
-        // Phase 3: Open manage panel + multi-section scrape
-        logAction('Phase 3: Attempting manage panel navigation');
+      // Phase 3: Verify toggles even after button click
+      // Many "Reject All" buttons are deceptive and don't actually deny everything
+      // Only skip verification if:
+      // 1. Banner is confirmed closed, AND
+      // 2. We have concrete evidence of multiple denials (not just "clicked button")
+      const hasConcreteEvidence = R.unchecked.length >= 5; // At least 5 actual consent denials logged
+      const canSkipVerification = R.bannerClosed && hasConcreteEvidence;
+      
+      if (!canSkipVerification && Date.now() - operationStartTime < MAX_TOTAL_RUNTIME) {
+        if (denied && R.bannerClosed) {
+          logAction('Phase 3: Verifying "Reject All" button actually worked (checking manage panel)');
+        } else {
+          logAction('Phase 3: Attempting manage panel navigation');
+        }
         const panelCount = await tryManagePanel();
 
         // Phase 4: Raw toggle scrape if nothing found yet
@@ -2024,11 +2212,11 @@
     
     // Log summary to console
     if (R.bannerClosed) {
-      console.log(`[DenyStealthCookies] ✅ SUCCESS: Banner closed via ${R.cmpMethod}`);
+      console.log(`[Guardr] ✅ SUCCESS: Banner closed via ${R.cmpMethod}`);
     } else if (R.bannerFound) {
-      console.log(`[DenyStealthCookies] ⚠️ Banner found but not closed. ${R.unchecked.length} cookies denied.`);
+      console.log(`[Guardr] ⚠️ Banner found but not closed. ${R.unchecked.length} cookies denied.`);
     } else {
-      console.log(`[DenyStealthCookies] ℹ️ No banner detected on this page.`);
+      console.log(`[Guardr] ℹ️ No banner detected on this page.`);
     }
 
     // Cleanup results
@@ -2051,10 +2239,10 @@
     
     // Expose result for test automation (inject into page's main world via DOM)
     try {
-      let resultEl = document.getElementById('__denystealth_result__');
+      let resultEl = document.getElementById('__guardr_result__');
       if (!resultEl) {
         resultEl = document.createElement('div');
-        resultEl.id = '__denystealth_result__';
+        resultEl.id = '__guardr_result__';
         resultEl.style.display = 'none';
         document.body.appendChild(resultEl);
       }
@@ -2080,30 +2268,43 @@
       }
       
       // Check for test mode flag (set by automation)
-      const testMode = sessionStorage.getItem('denystealth_test_mode') === 'true';
+      const testMode = sessionStorage.getItem('guardr_test_mode') === 'true';
       
       const data = await new Promise(r=>chrome.storage.local.get('autoMode',r));
       if (!data.autoMode && !testMode) return;
 
-      console.log('[DenyStealthCookies] Auto-mode enabled, watching for CMPs...');
+      console.log('[Guardr] Auto-mode enabled, watching for CMPs...');
 
       // Strategy 1: Check if CMP is already visible (with retries for slow-loading CMPs)
       let cmpDetected = false;
       for (let attempt = 0; attempt < 5; attempt++) {
         const cmps = detectCMPs();
         if (cmps.length > 0) {
-          console.log(`[DenyStealthCookies] CMP detected on attempt ${attempt + 1}:`, cmps.join(', '));
+          console.log(`[Guardr] CMP detected on attempt ${attempt + 1}:`, cmps.join(', '));
           cmpDetected = true;
           
           // Wait longer for Usercentrics (known to be slow)
           const hasUsercentrics = cmps.some(cmp => cmp === 'Usercentrics');
           const waitTime = hasUsercentrics ? 3000 : 1500;
-          console.log(`[DenyStealthCookies] Waiting ${waitTime}ms for CMP to fully render...`);
+          console.log(`[Guardr] Waiting ${waitTime}ms for CMP to fully render...`);
           await sleep(waitTime);
           
-          console.log(`[DenyStealthCookies] Starting denial operation...`);
+          console.log(`[Guardr] Starting denial operation...`);
           const result = await runDeny();
-          console.log(`[DenyStealthCookies] Denial operation complete.`);
+          console.log(`[Guardr] Denial operation complete.`);
+          
+          // Mark that auto-denial has completed for this page session
+          if (result.bannerClosed || (result.unchecked && result.unchecked.length > 0)) {
+            sessionStorage.setItem('guardr_auto_complete', 'true');
+            sessionStorage.setItem('guardr_auto_result', JSON.stringify({
+              denied: result.unchecked?.length || 0,
+              kept: result.mandatory?.length || 0,
+              bannerClosed: result.bannerClosed,
+              cmp: result.cmpDetected,
+              timestamp: Date.now()
+            }));
+          }
+          
           showAutoModeNotification(result);
           return;
         }
@@ -2113,17 +2314,30 @@
       
       if (!cmpDetected) {
         // Use universal detection to find any modal/overlay with privacy content
-        console.log('[DenyStealthCookies] No specific CMP detected, trying universal modal detection...');
+        console.log('[Guardr] No specific CMP detected, trying universal modal detection...');
         const modals = findAllModals();
         
         if (modals.length > 0) {
-          console.log(`[DenyStealthCookies] Found ${modals.length} modal(s), checking if privacy-related...`);
+          console.log(`[Guardr] Found ${modals.length} modal(s), checking if privacy-related...`);
           
           for (const modal of modals) {
             if (isPrivacyModal(modal)) {
-              console.log('[DenyStealthCookies] Privacy modal detected by universal detection, attempting denial...');
+              console.log('[Guardr] Privacy modal detected by universal detection, attempting denial...');
               await sleep(1200);
               const result = await runDeny();
+              
+              // Mark that auto-denial has completed
+              if (result.bannerClosed || (result.unchecked && result.unchecked.length > 0)) {
+                sessionStorage.setItem('guardr_auto_complete', 'true');
+                sessionStorage.setItem('guardr_auto_result', JSON.stringify({
+                  denied: result.unchecked?.length || 0,
+                  kept: result.mandatory?.length || 0,
+                  bannerClosed: result.bannerClosed,
+                  cmp: result.cmpDetected,
+                  timestamp: Date.now()
+                }));
+              }
+              
               showAutoModeNotification(result);
               return;
             }
@@ -2131,7 +2345,7 @@
         }
         
         // Aggressive fallback: Look for cookie-related buttons anywhere on page
-        console.log('[DenyStealthCookies] No modal detected, scanning for standalone cookie buttons...');
+        console.log('[Guardr] No modal detected, scanning for standalone cookie buttons...');
         const allButtons = Array.from(document.querySelectorAll('button,[role="button"],a[class*="btn"]')).filter(isVisible);
         const cookieButtons = allButtons.filter(btn => {
           const text = textOf(btn).toLowerCase();
@@ -2150,15 +2364,28 @@
         });
         
         if (cookieButtons.length > 0) {
-          console.log(`[DenyStealthCookies] Found ${cookieButtons.length} standalone cookie button(s), attempting denial...`);
+          console.log(`[Guardr] Found ${cookieButtons.length} standalone cookie button(s), attempting denial...`);
           await sleep(1200);
           const result = await runDeny();
+          
+          // Mark that auto-denial has completed
+          if (result.bannerClosed || (result.unchecked && result.unchecked.length > 0)) {
+            sessionStorage.setItem('guardr_auto_complete', 'true');
+            sessionStorage.setItem('guardr_auto_result', JSON.stringify({
+              denied: result.unchecked?.length || 0,
+              kept: result.mandatory?.length || 0,
+              bannerClosed: result.bannerClosed,
+              cmp: result.cmpDetected,
+              timestamp: Date.now()
+            }));
+          }
+          
           showAutoModeNotification(result);
           return;
         }
       }
 
-      console.log('[DenyStealthCookies] No CMP detected yet, setting up observer...');
+      console.log('[Guardr] No CMP detected yet, setting up observer...');
 
       // Strategy 2: Watch for CMP elements to appear (smart detection)
       let hasRun = false;
@@ -2220,11 +2447,24 @@
               const waitTime = isUsercentrics ? 2000 : 1200;
               
               const detectionType = isPotentialPrivacyModal ? 'Privacy modal (universal)' : 'CMP element';
-              console.log(`[DenyStealthCookies] ${detectionType} appeared in DOM` + 
+              console.log(`[Guardr] ${detectionType} appeared in DOM` + 
                          (isUsercentrics ? ' (Usercentrics - waiting longer)' : '') + 
                          ', triggering auto-deny...');
               await sleep(waitTime);
               const result = await runDeny();
+              
+              // Mark that auto-denial has completed
+              if (result.bannerClosed || (result.unchecked && result.unchecked.length > 0)) {
+                sessionStorage.setItem('guardr_auto_complete', 'true');
+                sessionStorage.setItem('guardr_auto_result', JSON.stringify({
+                  denied: result.unchecked?.length || 0,
+                  kept: result.mandatory?.length || 0,
+                  bannerClosed: result.bannerClosed,
+                  cmp: result.cmpDetected,
+                  timestamp: Date.now()
+                }));
+              }
+              
               showAutoModeNotification(result);
               
               // Notify background to update badge
@@ -2246,14 +2486,14 @@
       // Fallback: Stop observing after 20 seconds if nothing found
       setTimeout(() => {
         if (!hasRun && autoModeObserver) {
-          console.log('[DenyStealthCookies] Auto-mode timeout - no CMP detected after 20 seconds');
+          console.log('[Guardr] Auto-mode timeout - no CMP detected after 20 seconds');
           autoModeObserver.disconnect();
           autoModeObserver = null;
         }
       }, 20000);
 
     } catch(err){
-      console.error('[DenyStealthCookies] Auto-mode error:', err);
+      console.error('[Guardr] Auto-mode error:', err);
     }
   }
   checkAutoMode();
@@ -2273,6 +2513,12 @@
   function enterTeachingMode() {
     if (teachingMode) return; // Already in teaching mode
     
+    // Safety check: Ensure document.body exists
+    if (!document.body) {
+      console.error('[Guardr] Cannot enter teaching mode: document.body not available');
+      throw new Error('Document body not available');
+    }
+    
     teachingMode = true;
     logAction('Entering teaching mode');
     
@@ -2280,12 +2526,12 @@
     if (autoModeObserver) {
       autoModeObserver.disconnect();
       autoModeObserver = null;
-      console.log('[DenyStealthCookies] Auto-mode observer disabled during teaching mode');
+      console.log('[Guardr] Auto-mode observer disabled during teaching mode');
     }
     
     // Create overlay with instructions (non-blocking)
     teachingOverlay = document.createElement('div');
-    teachingOverlay.id = 'denystealth-teaching-overlay';
+    teachingOverlay.id = 'guardr-teaching-overlay';
     teachingOverlay.innerHTML = `
       <div style="
         position: fixed;
@@ -2312,7 +2558,7 @@
           <p style="margin: 0 0 16px 0; font-size: 13px; line-height: 1.5; opacity: 0.95;">
             Click any button on the page to teach the extension. I'll learn which button you clicked and use it automatically next time.
           </p>
-          <button id="denystealth-cancel-teaching" style="
+          <button id="guardr-cancel-teaching" style="
             background: rgba(255, 255, 255, 0.2);
             color: white;
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -2333,7 +2579,7 @@
     document.body.appendChild(teachingOverlay);
     
     // Add cancel button handlers
-    const cancelBtn = document.getElementById('denystealth-cancel-teaching');
+    const cancelBtn = document.getElementById('guardr-cancel-teaching');
     if (cancelBtn) {
       cancelBtn.addEventListener('click', exitTeachingMode);
       // Add hover effect via event listeners (CSP-compliant)
@@ -2349,7 +2595,7 @@
     teachingClickHandler = async (e) => {
       // Only capture clicks on buttons/links
       const target = e.target.closest('button,[role="button"],a');
-      if (!target || target.closest('#denystealth-teaching-overlay')) return;
+      if (!target || target.closest('#guardr-teaching-overlay')) return;
       
       e.preventDefault();
       e.stopPropagation();
@@ -2357,7 +2603,7 @@
       const text = textOf(target);
       const selector = getUniqueSelector(target);
       
-      console.log('[DenyStealthCookies] Teaching mode: Captured button click:', { text, selector });
+      console.log('[Guardr] Teaching mode: Captured button click:', { text, selector });
       
       // Save the learned pattern
       const domain = getDomainKey(window.location.href);
@@ -2368,7 +2614,7 @@
           method: 'user-taught'
         });
         
-        console.log('[DenyStealthCookies] Pattern saved for domain:', domain);
+        console.log('[Guardr] Pattern saved for domain:', domain);
         
         // Notify popup/background that teaching was successful
         try {
@@ -2378,7 +2624,7 @@
             pattern: { text, selector }
           });
         } catch (err) {
-          console.log('[DenyStealthCookies] Could not notify about teaching completion:', err);
+          console.log('[Guardr] Could not notify about teaching completion:', err);
         }
         
         // Show success message
@@ -2389,7 +2635,7 @@
           clickElement(target);
           logAction(`Teaching mode: Clicked user-taught button "${text}"`);
         } catch (err) {
-          console.error('[DenyStealthCookies] Failed to click taught button:', err);
+          console.error('[Guardr] Failed to click taught button:', err);
         }
         
         // Exit teaching mode after a delay
@@ -2421,11 +2667,11 @@
       try {
         const data = await new Promise(r => chrome.storage.local.get('autoMode', r));
         if (data.autoMode) {
-          console.log('[DenyStealthCookies] Re-enabling auto-mode observer after teaching mode');
+          console.log('[Guardr] Re-enabling auto-mode observer after teaching mode');
           checkAutoMode();
         }
       } catch(err) {
-        console.log('[DenyStealthCookies] Could not check auto-mode status:', err);
+        console.log('[Guardr] Could not check auto-mode status:', err);
       }
     })();
   }
@@ -2556,10 +2802,10 @@
       loadLearnedPatterns().then(() => {
         const domain = getDomainKey(window.location.href);
         const patterns = domain && learnedPatterns ? learnedPatterns[domain] : null;
-        console.log('[DenyStealthCookies] Sending learned patterns for', domain, ':', patterns);
+        console.log('[Guardr] Sending learned patterns for', domain, ':', patterns);
         sendResponse({ domain, patterns });
       }).catch(err => {
-        console.error('[DenyStealthCookies] Error loading patterns:', err);
+        console.error('[Guardr] Error loading patterns:', err);
         sendResponse({ domain: null, patterns: null });
       });
       return true; // Keep channel open for async response
@@ -2583,13 +2829,26 @@
         '#onetrust-banner-sdk','#CybotCookiebotDialog','#didomi-host',
         'dialog[open],[role="dialog"]',
       ].some(sel=>{try{const e=document.querySelector(sel);return e&&isVisible(e);}catch(_){return false;}});
+      
+      // Check if auto-denial already completed in this session
+      const autoComplete = sessionStorage.getItem('guardr_auto_complete') === 'true';
+      const autoResultStr = sessionStorage.getItem('guardr_auto_result');
+      let autoResult = null;
+      if (autoComplete && autoResultStr) {
+        try {
+          autoResult = JSON.parse(autoResultStr);
+        } catch(_) {}
+      }
+      
       sendResponse({
         cmps,
         cmp: cmpString,
         bannerVisible,
         toggleCount:document.querySelectorAll('input[type="checkbox"],[role="switch"],[role="checkbox"]').length,
         url:window.location.href,
-        title:document.title
+        title:document.title,
+        autoComplete,  // NEW: indicates auto-denial already ran
+        autoResult     // NEW: the auto-denial result
       });
       return true;
     }

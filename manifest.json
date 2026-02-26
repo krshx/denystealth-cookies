@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DenyStealthCookies — Deny All Cookie Tracking",
-  "short_name": "DenyStealthCookies",
-  "version": "1.4.0",
+  "name": "Guardr — Consent & Cookie Guardian",
+  "short_name": "Guardr",
+  "version": "2.1.4",
   "description": "One-click denial of all non-essential cookies and tracking consents. Auto-learns patterns & lets you teach it. Handles complex multi-level CMPs with tab navigation, iframe scanning. Works on TCF, OneTrust, Cookiebot, Didomi, Quantcast & more. Privacy-first.",
   "permissions": [
     "activeTab",
@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["semantic-library.js", "learning-module.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

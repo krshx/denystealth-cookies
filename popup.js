@@ -1,5 +1,10 @@
 // popup.js — DenyStealthCookies Extension
 
+// ── Debug Configuration ────────────────────────────────────────────────────
+// Set to false for production to disable all console logging
+const DEBUG = true;
+const log = DEBUG ? console.log.bind(console) : () => {};
+
 document.addEventListener('DOMContentLoaded', async () => {
   const denyBtn       = document.getElementById('denyBtn');
   const btnText       = document.getElementById('btnText');
@@ -31,6 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Constants
   const HISTORY_EXPIRY_DAYS = 30;
   const DONATION_SNOOZE_DAYS = 14;
+  
+  // Global filter state
+  let activeFilter = null;
 
   // ── Init ──────────────────────────────────────────────────────────────────
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -44,8 +52,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load and display history on init
   loadHistory();  
-  // Wire up clear history button
-  document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory);
+  // Wire up clear history button (using arrow function for consistent scoping)
+  document.getElementById('clearHistoryBtn')?.addEventListener('click', () => clearHistory());
+  // Wire up clear filter button (using arrow function to avoid reference error)
+  document.getElementById('clearFilterBtn')?.addEventListener('click', () => clearFilter());
   if (tab?.url) {
     try {
       siteDomain.textContent = new URL(tab.url).hostname.replace(/^www\./, '');
@@ -71,9 +81,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentUrl: tab?.url 
     });
     
+    // Normalize URLs for comparison (ignore trailing slash, www, query params, hash)
+    const normalizeUrl = (url) => {
+      try {
+        const u = new URL(url);
+        const hostname = u.hostname.replace(/^www\./, '');
+        const pathname = u.pathname.replace(/\/$/, '') || '/';
+        return `${u.protocol}//${hostname}${pathname}`;
+      } catch {
+        return url;
+      }
+    };
+    
     // Show previous results if they exist and match current tab URL
-    if (previousResult && tab?.url && previousResult.url === tab.url) {
+    const urlsMatch = previousResult && tab?.url && 
+                      normalizeUrl(previousResult.url) === normalizeUrl(tab.url);
+    
+    // Only show if result is recent (within last 30 minutes) to avoid stale data
+    const resultAge = Date.now() - (previousResult?.timestamp || 0);
+    const isRecent = resultAge < 30 * 60 * 1000; // 30 minutes
+    
+    if (urlsMatch && isRecent) {
       console.log('[Popup] Found previous scan result, displaying...');
+      console.log('[Popup] Result age:', Math.round(resultAge/1000), 'seconds');
+      console.log('[Popup] Normalized URLs match:', normalizeUrl(previousResult.url), '===', normalizeUrl(tab.url));
       renderResults(previousResult);
       setDone(previousResult, true); // true = isPreviousResult
       previousResultShown = true;
@@ -88,26 +119,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       console.log('[Popup] Previous results displayed, skipping SCAN_ONLY');
     } else {
-      console.log('[Popup] No matching previous results, will run SCAN_ONLY');
+      if (previousResult && !isRecent) {
+        console.log('[Popup] Previous result is stale (age:', Math.round(resultAge/1000), 'seconds), will run fresh scan');
+      } else if (previousResult && !urlsMatch) {
+        console.log('[Popup] URLs do not match:', normalizeUrl(previousResult.url), 'vs', normalizeUrl(tab.url));
+      } else {
+        console.log('[Popup] No previous result found, will run SCAN_ONLY');
+      }
     }
   } catch (err) {
     console.log('[Popup] Could not load previous results:', err);
   }
 
   // Wait for content script to be ready (it's auto-injected via manifest.json)
-  if (tab?.id && tab?.url && 
-      !tab.url.startsWith('chrome://') && 
-      !tab.url.startsWith('about://') &&
-      !tab.url.startsWith('chrome-extension://') &&
-      !tab.url.startsWith('edge://')) {
-    
+  let contentScriptAvailable = false;
+  const isRestrictedPage = tab?.url && (
+    tab.url.startsWith('chrome://') || 
+    tab.url.startsWith('about://') ||
+    tab.url.startsWith('chrome-extension://') ||
+    tab.url.startsWith('edge://') ||
+    tab.url.startsWith('file://')
+  );
+  
+  if (tab?.id && !isRestrictedPage) {
     // Wait up to 2 seconds for content script to be ready
-    let scriptReady = false;
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
         const pingResponse = await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
         if (pingResponse?.ready) {
-          scriptReady = true;
+          contentScriptAvailable = true;
           break;
         }
       } catch (e) {
@@ -116,8 +156,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
     
-    if (!scriptReady) {
-      console.warn('Content script not ready after 2 seconds');
+    if (!contentScriptAvailable) {
+      log('[Popup] Content script not ready after 2 seconds');
+      // Disable interactive features that require content script
+      if (teachBtn) {
+        teachBtn.disabled = true;
+        teachBtn.title = 'Content script not available on this page';
+        teachBtn.style.opacity = '0.5';
+        teachBtn.style.cursor = 'not-allowed';
+      }
+    }
+  } else if (isRestrictedPage) {
+    log('[Popup] Cannot inject content script on restricted page:', tab?.url);
+    // Disable features that need content script
+    if (teachBtn) {
+      teachBtn.disabled = true;
+      teachBtn.title = 'Not available on browser internal pages';
+      teachBtn.style.opacity = '0.5';
+      teachBtn.style.cursor = 'not-allowed';
+    }
+    if (denyBtn) {
+      denyBtn.disabled = true;
+      setStatus('error', 'Cannot run on this page', 'Extension cannot access browser internal pages');
     }
   }
 
@@ -128,16 +188,33 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (resp) {
         const cmps = parseCmps(resp.cmp);
         renderCmpBadges(cmps);
-        if (cmps.length === 0 || resp.cmp === 'Generic/Unknown') {
+        
+        // Check if auto-denial already completed
+        if (resp.autoComplete && resp.autoResult) {
+          log('[Popup] Auto-denial already completed, showing result');
+          
+          // Show success status
+          const result = {
+            unchecked: Array(resp.autoResult.denied).fill(''), // Mock array for count
+            mandatory: Array(resp.autoResult.kept).fill(''),
+            bannerClosed: resp.autoResult.bannerClosed,
+            cmpDetected: resp.autoResult.cmp || cmps.join(', '),
+            timestamp: resp.autoResult.timestamp
+          };
+          
+          setDone(result, true); // true = isPreviousResult
+          renderResults(result);
+          noCmpNotice.classList.remove('visible');
+        } else if (cmps.length === 0 || resp.cmp === 'Generic/Unknown') {
           noCmpNotice.classList.add('visible');
           setStatus('ready', 'No standard CMP detected', `Found ${resp.toggleCount || 0} toggles — will attempt generic denial`);
         } else {
-      setStatus('ready', 'Consent banner detected — ready to deny', `CMP: ${cmps.join(', ')} · Click to deny all`);
+          setStatus('ready', 'Consent banner detected — ready to deny', `CMP: ${cmps.join(', ')} · Click to deny all`);
         }
       }
     } catch (scanError) {
       // Content script not available yet - that's okay, user can still click the button
-      console.log('Initial scan failed:', scanError.message);
+      log('Initial scan failed:', scanError.message);
       setStatus('ready', 'Ready — click to deny all non-essential', 'Click the button to remove non-essential tracking');
     }
   }
@@ -189,6 +266,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   teachBtn?.addEventListener('click', async () => {
     if (!tab?.id) return;
     
+    // Check if content script is available before trying to use it
+    if (!contentScriptAvailable) {
+      alert('Teaching mode requires the content script to be active.\n\nThis feature is not available on:\n• Browser internal pages (chrome://, edge://)\n• Extension pages\n• File:// URLs\n\nTry navigating to a regular website first.');
+      return;
+    }
+    
     if (!teachingModeActive) {
       // Enter teaching mode
       try {
@@ -200,8 +283,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Close popup after a short delay to let user interact with page
         setTimeout(() => window.close(), 300);
       } catch (err) {
-        console.error('Failed to enter teaching mode:', err);
-        alert('Could not enter teaching mode. Please make sure you are on a regular webpage.');
+        log('Failed to enter teaching mode:', err);
+        let errorMsg;
+        if (err.message?.includes('body not available')) {
+          errorMsg = 'Page not fully loaded. Please wait a moment and try again.';
+        } else if (err.message?.includes('Receiving end does not exist')) {
+          errorMsg = 'Content script is not responding.\n\nPlease reload the page and try again.';
+        } else {
+          errorMsg = 'Could not enter teaching mode.\n\nTry reloading the page or navigating to a different website.';
+        }
+        alert(errorMsg);
       }
     } else {
       // Exit teaching mode
@@ -211,7 +302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         teachBtn.classList.remove('teaching-active');
         teachBtnText.textContent = 'Extension Missed a Popup?';
       } catch (err) {
-        console.error('Failed to exit teaching mode:', err);
+        log('Failed to exit teaching mode:', err);
       }
     }
   });
@@ -558,14 +649,30 @@ async function loadHistory() {
     return;
   }
   
+  // Apply filter if active
+  let filteredHistory = history;
+  if (activeFilter) {
+    filteredHistory = applyFilter(history, activeFilter);
+  }
+  
   // Calculate stats
   const totalDenied = history.reduce((sum, item) => sum + item.denied, 0);
   const uniqueSites = new Set(history.map(item => item.domain)).size;
   
-  historyStats.textContent = `${totalDenied.toLocaleString()} total denied · ${uniqueSites} sites · ${history.length} sessions`;
+  // Show filter status or regular stats
+  if (activeFilter && filteredHistory.length < history.length) {
+    historyStats.textContent = `Showing ${filteredHistory.length} of ${history.length} sessions · ${totalDenied.toLocaleString()} total denied`;
+  } else {
+    historyStats.textContent = `${totalDenied.toLocaleString()} total denied · ${uniqueSites} sites · ${history.length} sessions`;
+  }
   
-  // Render history items
-  historyList.innerHTML = history.map((item, index) => {
+  // Render filtered history items
+  if (filteredHistory.length === 0) {
+    historyList.innerHTML = '<div class="result-empty">No sessions match this filter.</div>';
+    return;
+  }
+  
+  historyList.innerHTML = filteredHistory.map((item, index) => {
     const date = new Date(item.timestamp);
     const timeAgo = formatTimeAgo(item.timestamp);
     const hasActionLog = item.actionLog && item.actionLog.length > 0;
@@ -669,10 +776,114 @@ async function loadHistory() {
   }, 0);
 }
 
+// ── Filter Functions ────────────────────────────────────────────────────────
+
+function applyFilter(history, filter) {
+  if (!filter) return history;
+  
+  switch (filter.type) {
+    case 'status':
+      return history.filter(item => {
+        switch (filter.value) {
+          case 'fullSuccess':
+            return item.bannerClosed;
+          case 'partial':
+            return item.denied > 0 && !item.bannerClosed;
+          case 'failed':
+            return item.bannerFound && !item.bannerClosed && item.denied === 0;
+          case 'noBanner':
+            return !item.bannerFound && item.bannerFound !== undefined;
+          default:
+            return true;
+        }
+      });
+    
+    case 'denialType':
+      return history.filter(item => {
+        switch (filter.value) {
+          case 'consent':
+            return (item.consentDenials || 0) > 0;
+          case 'li':
+            return (item.legitimateInterestDenials || 0) > 0;
+          case 'banner':
+            return item.bannerClosed;
+          default:
+            return true;
+        }
+      });
+    
+    case 'date':
+      const targetDate = new Date(filter.value).toISOString().split('T')[0];
+      return history.filter(item => {
+        const itemDate = new Date(item.timestamp).toISOString().split('T')[0];
+        return itemDate === targetDate;
+      });
+    
+    case 'domain':
+      return history.filter(item => item.domain === filter.value);
+    
+    default:
+      return history;
+  }
+}
+
+function setFilter(type, value, label) {
+  activeFilter = { type, value, label };
+  
+  // Show filter indicator
+  const filterIndicator = document.getElementById('filterIndicator');
+  const filterText = document.getElementById('filterText');
+  if (filterIndicator && filterText) {
+    filterText.textContent = label;
+    filterIndicator.style.display = 'flex';
+  }
+  
+  // Switch to history tab
+  switchToHistoryTab();
+  
+  // Reload history with filter
+  loadHistory();
+}
+
+function clearFilter() {
+  activeFilter = null;
+  
+  // Hide filter indicator
+  const filterIndicator = document.getElementById('filterIndicator');
+  if (filterIndicator) {
+    filterIndicator.style.display = 'none';
+  }
+  
+  // Reload history without filter
+  loadHistory();
+}
+
+function switchToHistoryTab() {
+  // Activate history tab
+  const historyTab = document.querySelector('[data-tab="history"]');
+  const historyPanel = document.getElementById('panelHistory');
+  
+  if (historyTab && historyPanel) {
+    // Remove active from all tabs/panels
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    
+    // Activate history tab
+    historyTab.classList.add('active');
+    historyPanel.classList.add('active');
+    
+    // Smooth scroll to history list
+    setTimeout(() => {
+      historyPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+  }
+}
+
 async function clearHistory() {
   if (!confirm('Clear all history? This cannot be undone.')) return;
   
   await chrome.storage.local.set({ denyHistory: [] });
+  clearFilter(); // Also clear any active filter
   loadHistory();
 }
 
@@ -702,6 +913,9 @@ async function loadDashboard() {
     createTypesChart(stats);
     createTimelineChart(history);
     createTopSitesChart(history);
+    
+    // Load learning analytics
+    await loadLearningAnalytics();
     
   } catch (err) {
     console.error('[Dashboard] Error loading dashboard:', err);
@@ -809,6 +1023,14 @@ function createSuccessChart(stats) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const labels = ['fullSuccess', 'partial', 'failed', 'noBanner'];
+          const labelTexts = ['Full Success', 'Partial Success', 'Failed Denials', 'No Banner Detected'];
+          setFilter('status', labels[index], `📊 ${labelTexts[index]}`);
+        }
+      },
       plugins: {
         legend: {
           position: 'bottom',
@@ -863,6 +1085,14 @@ function createTypesChart(stats) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const types = ['consent', 'li', 'banner'];
+          const labels = ['Consent Denials', 'Legitimate Interest Denials', 'Banner Closures'];
+          setFilter('denialType', types[index], `📊 ${labels[index]}`);
+        }
+      },
       scales: {
         y: {
           beginAtZero: true,
@@ -961,6 +1191,15 @@ function createTimelineChart(history) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const dateStr = sortedDays[index].date;
+          const date = new Date(dateStr);
+          const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          setFilter('date', dateStr, `📅 ${formatted}`);
+        }
+      },
       scales: {
         y: {
           beginAtZero: true,
@@ -1029,6 +1268,7 @@ function createTopSitesChart(history) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8);
   
+  const fullDomains = topSites.map(([domain]) => domain);
   const labels = topSites.map(([domain]) => {
     // Truncate long domains
     return domain.length > 20 ? domain.substring(0, 17) + '...' : domain;
@@ -1051,6 +1291,13 @@ function createTopSitesChart(history) {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const domain = fullDomains[index];
+          setFilter('domain', domain, `🌐 ${domain}`);
+        }
+      },
       scales: {
         x: {
           beginAtZero: true,
@@ -1087,6 +1334,125 @@ function createTopSitesChart(history) {
       }
     }
   });
+}
+
+// ── Learning Analytics ────────────────────────────────────────────────────
+async function loadLearningAnalytics() {
+  try {
+    // Load learning data from storage
+    const data = await chrome.storage.local.get(['globalLearnedPatterns', 'customSemanticPatterns']);
+    const globalPatterns = data.globalLearnedPatterns || {};
+    const customPatterns = data.customSemanticPatterns || {};
+    
+    // Calculate statistics
+    const allPatterns = Object.values(globalPatterns);
+    const totalPatterns = allPatterns.length;
+    const promotedCount = Object.keys(customPatterns).length;
+    const uniqueDomains = new Set();
+    let totalConfidence = 0;
+    
+    allPatterns.forEach(pattern => {
+      if (pattern.domains) {
+        pattern.domains.forEach(d => uniqueDomains.add(d));
+      }
+      totalConfidence += (pattern.confidence || 0.5);
+    });
+    
+    const avgConfidence = totalPatterns > 0 
+      ? Math.round((totalConfidence / totalPatterns) * 100) 
+      : 0;
+    
+    // Update stat cards
+    document.getElementById('totalLearnedPatterns').textContent = totalPatterns;
+    document.getElementById('learningSites').textContent = uniqueDomains.size;
+    document.getElementById('avgConfidence').textContent = avgConfidence + '%';
+    document.getElementById('promotedPatterns').textContent = promotedCount;
+    
+    // Render patterns view
+    const viewContainer = document.getElementById('learningPatternsView');
+    if (totalPatterns === 0) {
+      viewContainer.innerHTML = `
+        <div style="text-align: center; padding: 20px; color: var(--text-dim); font-size: 11px;">
+          <div style="font-size: 32px; margin-bottom: 8px;">🌱</div>
+          <div>No patterns learned yet</div>
+          <div style="margin-top: 4px; opacity: 0.7;">Extension will automatically learn from successful button clicks</div>
+        </div>
+      `;
+      return;
+    }
+    
+    // Sort patterns by confidence * usage
+    const sortedPatterns = allPatterns.sort((a, b) => {
+      const scoreA = (a.confidence || 0.5) * (a.usageCount || 1);
+      const scoreB = (b.confidence || 0.5) * (b.usageCount || 1);
+      return scoreB - scoreA;
+    }).slice(0, 20); // Show top 20
+    
+    viewContainer.innerHTML = `
+      <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
+        Top ${Math.min(sortedPatterns.length, 20)} Patterns by Performance
+      </div>
+      ${sortedPatterns.map(pattern => {
+        const confidencePercent = Math.round((pattern.confidence || 0.5) * 100);
+        const isPromoted = pattern.text in customPatterns;
+        const color = confidencePercent >= 85 ? '#00e87a' : confidencePercent >= 70 ? '#ffb800' : '#8a95a8';
+        
+        return `
+          <div style="
+            padding: 8px 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+          ">
+            <div style="flex: 1; min-width: 0;">
+              <div style="
+                font-family: var(--mono);
+                color: var(--text);
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                margin-bottom: 3px;
+              ">"${esc(pattern.text)}"</div>
+              <div style="display: flex; gap: 8px; font-size: 9px; color: var(--text-dim);">
+                <span>🎯 ${pattern.usageCount || 1} uses</span>
+                <span>🌍 ${pattern.domains?.length || 1} sites</span>
+                <span>📈 ${pattern.classification || 'deny'}</span>
+              </div>
+            </div>
+            <div style="
+              background: rgba(${parseInt(color.slice(1,3),16)}, ${parseInt(color.slice(3,5),16)}, ${parseInt(color.slice(5,7),16)}, 0.15);
+              color: ${color};
+              padding: 4px 8px;
+              border-radius: 4px;
+              font-family: var(--mono);
+              font-size: 10px;
+              font-weight: 700;
+              white-space: nowrap;
+            ">${confidencePercent}%</div>
+            ${isPromoted ? '<div style="color: #9333ea; font-size: 14px;" title="Promoted to semantic library">⭐</div>' : ''}
+          </div>
+        `;
+      }).join('')}
+      ${totalPatterns > 20 ? `
+        <div style="text-align: center; padding: 8px; color: var(--text-dim); font-size: 10px;">
+          ... and ${totalPatterns - 20} more patterns
+        </div>
+      ` : ''}
+    `;
+    
+  } catch (err) {
+    console.error('[Learning Analytics] Error loading learning analytics:', err);
+    document.getElementById('learningPatternsView').innerHTML = `
+      <div style="text-align: center; padding: 20px; color: var(--accent); font-size: 11px;">
+        Failed to load learning analytics
+      </div>
+    `;
+  }
 }
 
 function extractDomain(url) {
@@ -1246,7 +1612,7 @@ async function maybeSendTelemetry(result) {
   };
 
   try {
-    await fetch('https://telemetry.denystealth.io/ping', {
+    await fetch('https://telemetry.guardr.io/ping', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

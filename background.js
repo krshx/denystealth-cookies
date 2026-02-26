@@ -1,5 +1,10 @@
 // background.js — DenyStealthCookies Extension Service Worker
 
+// ── Debug Configuration ────────────────────────────────────────────────────
+// Set to false for production to disable all console logging
+const DEBUG = true;
+const log = DEBUG ? console.log.bind(console) : () => {};
+
 // Constants
 const HISTORY_EXPIRY_DAYS = 30;
 

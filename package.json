@@ -1,7 +1,7 @@
 {
-  "name": "denystealth-cookies-testing",
-  "version": "1.0.0",
-  "description": "Automated testing suite for DenyStealthCookies extension",
+  "name": "guardr-testing",
+  "version": "2.1.4",
+  "description": "Automated testing suite for Guardr extension",
   "scripts": {
     "test": "node test-automation.js",
     "test:quick": "node test-automation.js --quick",

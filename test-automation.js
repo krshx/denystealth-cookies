@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * DenyStealthCookies Automated Testing Script
+ * Guardr Automated Testing Script
  * 
  * Requirements:
  *   npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
@@ -60,7 +60,7 @@ class ExtensionTester {
     await fs.mkdir(SCREENSHOTS_DIR, { recursive: true });
 
     // Launch browser with extension loaded
-    console.log('🚀 Launching Chrome with DenyStealthCookies extension...');
+    console.log('🚀 Launching Chrome with Guardr extension...');
     this.browser = await puppeteer.launch({
       headless: false, // Must be false to load extensions
       args: [
@@ -101,7 +101,7 @@ class ExtensionTester {
       // Enable test mode for auto-mode (via sessionStorage flag)
       console.log('⚙️  Enabling test mode for auto-mode...');
       await page.evaluateOnNewDocument(() => {
-        sessionStorage.setItem('denystealth_test_mode', 'true');
+        sessionStorage.setItem('guardr_test_mode', 'true');
       });
 
       // Navigate to site
@@ -179,7 +179,7 @@ class ExtensionTester {
       // Capture action log and consent-or-pay detection from extension
       try {
         const extensionResult = await page.evaluate(() => {
-          const resultEl = document.getElementById('__denystealth_result__');
+          const resultEl = document.getElementById('__guardr_result__');
           if (resultEl) {
             const dataStr = resultEl.getAttribute('data-result');
             if (dataStr) {
@@ -249,7 +249,7 @@ class ExtensionTester {
     );
 
     // Generate markdown report
-    const report = `# DenyStealthCookies Test Report
+    const report = `# Guardr Test Report
 
 **Date:** ${new Date().toISOString()}  
 **Total Runtime:** ${(totalTime / 1000).toFixed(2)}s  

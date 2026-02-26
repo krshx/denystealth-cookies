@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DenyStealthCookies</title>
+  <title>Guardr</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="chart.js"></script>
@@ -305,6 +305,7 @@
     }
     .dashboard-stat-value.warning { color: var(--warn); }
     .dashboard-stat-value.error { color: var(--accent); }
+    .dashboard-stat-value.learning { color: #9333ea; }
     .dashboard-stat-label {
       font-size: 10px;
       color: var(--text-dim);
@@ -539,10 +540,10 @@
 
   <div class="header">
     <div class="logo">
-      <div class="logo-icon">🚫</div>
+      <div class="logo-icon">�️</div>
       <div class="logo-text">
-        <div class="logo-name">DENYSTEALTH</div>
-        <div class="logo-sub">Privacy First</div>
+        <div class="logo-name">GUARDR</div>
+        <div class="logo-sub">Privacy Guardian</div>
       </div>
     </div>
     <div class="site-info">
@@ -557,13 +558,13 @@
       <div class="status-dot" id="statusDot"></div>
       <div class="status-text">
         <div class="status-label" id="statusLabel">Ready to deny all consents</div>
-        <div class="status-detail" id="statusDetail">DenyStealthCookies removes non-essential tracking &amp; keeps only mandatory cookies</div>
+        <div class="status-detail" id="statusDetail">Guardr removes non-essential tracking &amp; keeps only mandatory cookies</div>
       </div>
     </div>
 
     <div class="no-cmp-notice" id="noCmpNotice">
       <div class="no-cmp-title">⚠ No standard CMP detected</div>
-      <div class="no-cmp-text">No recognised consent banner found. DenyStealthCookies will still attempt to uncheck any toggles found on the page.</div>
+      <div class="no-cmp-text">No recognised consent banner found. Guardr will still attempt to uncheck any toggles found on the page.</div>
     </div>
 
     <button class="deny-btn" id="denyBtn">
@@ -629,6 +630,10 @@
         <div class="history-stats" id="historyStats"></div>
         <button class="clear-history-btn" id="clearHistoryBtn">Clear All</button>
       </div>
+      <div class="filter-indicator" id="filterIndicator" style="display:none;">
+        <span class="filter-text" id="filterText"></span>
+        <button class="filter-clear-btn" id="clearFilterBtn" title="Clear filter">✕</button>
+      </div>
       <div class="history-list" id="historyList">
         <div class="result-empty">No history yet. Start denying consents!</div>
       </div>
@@ -677,6 +682,32 @@
             <canvas id="topSitesChart"></canvas>
           </div>
         </div>
+        
+        <!-- Learning Analytics Section -->
+        <div class="chart-card" style="border-color: rgba(147, 51, 234, 0.3);">
+          <div class="chart-title">🧠 Learning Analytics</div>
+          <div class="dashboard-stats" style="margin-bottom: 16px;">
+            <div class="dashboard-stat">
+              <div class="dashboard-stat-value learning" id="totalLearnedPatterns">0</div>
+              <div class="dashboard-stat-label">Patterns</div>
+            </div>
+            <div class="dashboard-stat">
+              <div class="dashboard-stat-value learning" id="learningSites">0</div>
+              <div class="dashboard-stat-label">Sites</div>
+            </div>
+            <div class="dashboard-stat">
+              <div class="dashboard-stat-value learning" id="avgConfidence">0%</div>
+              <div class="dashboard-stat-label">Avg Confidence</div>
+            </div>
+            <div class="dashboard-stat">
+              <div class="dashboard-stat-value learning" id="promotedPatterns">0</div>
+              <div class="dashboard-stat-label">Promoted</div>
+            </div>
+          </div>
+          <div id="learningPatternsView" style="max-height: 300px; overflow-y: auto;">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -686,7 +717,7 @@
     <div class="donation-prompt-content">
       <div class="donation-prompt-icon">☕</div>
       <div class="donation-prompt-text">
-        <div class="donation-prompt-title" id="donationPromptTitle">Enjoying DenyStealthCookies?</div>
+        <div class="donation-prompt-title" id="donationPromptTitle">Enjoying Guardr?</div>
         <div class="donation-prompt-sub">Free & open source • No ads • Your privacy protected</div>
       </div>
       <div class="donation-prompt-actions">
@@ -701,7 +732,7 @@
     <div class="footer-time" id="footerTime"></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button class="settings-toggle" id="settingsToggle" title="Settings">&#9881;</button>
-      <div class="footer-note">DenyStealthCookies v1.3</div>
+      <div class="footer-note">Guardr v2.1.4</div>
     </div>
   </div>
 

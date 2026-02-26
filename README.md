@@ -1,11 +1,34 @@
-# DenyStealthCookies 🍪🚫
+# Guardr 🛡️
 
 **One-click denial of all non-essential cookies and tracking consents.**  
-Production-grade Chrome extension that automatically handles complex CMPs with multi-level navigation, iframe scanning, and comprehensive vendor denial.
+Intelligent Chrome extension with **self-learning capabilities** that automatically handles any CMP using universal semantic detection.
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Web%20Store-blue)](https://chromewebstore.google.com/)
-[![Version](https://img.shields.io/badge/version-1.3.0-green)](https://github.com/krshx/denystealth-cookies)
+[![Version](https://img.shields.io/badge/version-2.1.0-green)](https://github.com/krshx/guardr)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+---
+
+## 🆕 What's New
+
+### v2.1.0 - **Intelligent Learning System** 🧠
+The extension now **grows smarter over time**:
+- **Auto-learns** from successful button detections
+- **Shares patterns** across all websites  
+- **Promotes patterns** to permanent library after 10+ proven uses
+- **Confidence scoring** ensures reliability (Bayesian-style)
+- **Export/import** learned patterns for sharing
+
+[📚 Read Learning System Documentation →](LEARNING_SYSTEM_DOCS.md)
+
+### v2.0.0 - **Universal Semantic Detection** 🌍
+Works on **any** cookie banner without site-specific rules:
+- **15+ Languages**: English, French, German, Spanish, Italian, Portuguese, Dutch, Danish, Swedish, Norwegian, Finnish, Polish, Czech, Romanian, Greek, Hungarian
+- **400+ Patterns**: Comprehensive button text library
+- **Shadow DOM Support**: Handles Usercentrics, custom elements
+- **Dark Pattern Detection**: "No thanks", "Later", "Click here", etc.
+
+[📖 Read v2.0 Release Notes →](RELEASE_NOTES_v2.0.0.md)
 
 ---
 
@@ -75,7 +98,7 @@ DenyStealthCookies automatically:
 
 3. Enable "Developer mode" (toggle in top-right)
 
-4. Click "Load unpacked" and select the `denystealth-cookies` folder
+4. Click "Load unpacked" and select the `guardr` folder
 
 5. The extension icon will appear in your toolbar
 
@@ -85,7 +108,7 @@ DenyStealthCookies automatically:
 
 ### Manual Mode (Default)
 1. Visit any website with a cookie banner
-2. Click the **DenyStealthCookies** extension icon
+2. Click the **Guardr** extension icon
 3. Click **"Deny All Non-Essential Consents"**
 4. View detailed results in the popup
 
@@ -126,7 +149,7 @@ The extension uses 6 phases to ensure maximum coverage:
 - **No personal data collected** — We never see what sites you visit
 - **Open source** — Audit the code yourself
 
-**Optional Telemetry:** If enabled, sends anonymous statistics (CMP type, consent count) to help improve CMP coverage. See [Privacy Policy](https://krshx.github.io/denystealth-cookies/).
+**Optional Telemetry:** If enabled, sends anonymous statistics (CMP type, consent count) to help improve CMP coverage. See [Privacy Policy](https://krshx.github.io/guardr/).
 
 ---
 
@@ -141,7 +164,7 @@ Contributions welcome! To contribute:
 5. Open a Pull Request
 
 ### Reporting Issues
-Found a site where it doesn't work? [Open an issue](https://github.com/krshx/denystealth-cookies/issues) with:
+Found a site where it doesn't work? [Open an issue](https://github.com/krshx/guardr/issues) with:
 - URL of the site
 - CMP type (if known)
 - Screenshot of the cookie banner
@@ -157,8 +180,8 @@ MIT License — see [LICENSE](LICENSE) file for details
 
 ## 💬 Contact
 
-- GitHub Issues: [krshx/denystealth-cookies/issues](https://github.com/krshx/denystealth-cookies/issues)
-- Email: [dev+denystealthcookies@gmail.com](mailto:dev+denystealthcookies@gmail.com)
+- GitHub Issues: [krshx/guardr/issues](https://github.com/krshx/guardr/issues)
+- Email: [dev+guardr@gmail.com](mailto:dev+guardr@gmail.com)
 
 ---
 
